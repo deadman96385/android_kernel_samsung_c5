@@ -573,9 +573,10 @@ int muic_afc_set_voltage(int voltage)
 	case 9:
 	case 12:
 		pdata->afc_limit_voltage = false;
-		if (gpmuic->ccic_rp == Rp_56K) {
+#if defined(CONFIG_MUIC_SUPPORT_CCIC)
+		if (gpmuic->ccic_rp == Rp_56K)
+#endif
 			muic_restart_afc();
-		}
 		break;
 	default:
 		pr_warn("%s:%s invalid value\n", MUIC_DEV_NAME, __func__);

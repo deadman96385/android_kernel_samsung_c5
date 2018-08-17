@@ -26,6 +26,9 @@
 #define SEC_NFC_WAKEUP			_IOW(SEC_NFC_MAGIC, 3, unsigned int)
 #define SEC_NFC_SET_NPT_MODE		_IOW(SEC_NFC_MAGIC, 4, unsigned int)
 
+#define SEC_NFC_DEBUG                   _IO(SEC_NFC_MAGIC, 99)
+#define SEC_NFC_USE_PINCTRL
+
 /* size */
 #define SEC_NFC_MSG_MAX_SIZE	(256 + 4)
 
@@ -43,8 +46,8 @@ struct sec_nfc_platform_data {
 	int ven;
 	int firm;
 	int wake;
-	int pvdd;
-
+	int pvdd_en;
+	int detection;		/* one binary: determine if nfc is supported or not */
 	unsigned int tvdd;
 	unsigned int avdd;
 
@@ -55,10 +58,10 @@ struct sec_nfc_platform_data {
 	u32 ven_gpio_flags;
 	u32 firm_gpio_flags;
 	u32 irq_gpio_flags;
-// [START] NPT
+	/*[START] NPT*/
 	unsigned int npt;
 	u32 npt_gpio_flags;
-// [END] NPT
+	/*[END] NPT*/
 	const char *nfc_pvdd;
 };
 
@@ -74,8 +77,7 @@ enum sec_nfc_power {
 	SEC_NFC_PW_OFF,
 };
 
-enum sec_nfc_firmpin
-{
+enum sec_nfc_firmpin {
 	SEC_NFC_FW_OFF = 0,
 	SEC_NFC_FW_ON,
 };
@@ -89,12 +91,12 @@ enum sec_nfc_wake {
 enum sec_nfc_npt_mode {
 	SEC_NFC_NPT_OFF = 0,
 	SEC_NFC_NPT_ON,
-        SEC_NFC_NPT_CMD_ON = 0x7E,
-        SEC_NFC_NPT_CMD_OFF,
+	SEC_NFC_NPT_CMD_ON = 0x7E,
+	SEC_NFC_NPT_CMD_OFF,
 };
 // [END] NPT
 
-extern int poweroff_charging;
-extern unsigned int lpcharge; /* LSI AP*/
+extern unsigned int lpcharge;
+
 #define NFC_I2C_LDO_ON  1
 #define NFC_I2C_LDO_OFF 0

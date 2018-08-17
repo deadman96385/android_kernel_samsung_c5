@@ -271,6 +271,7 @@ core-$(CONFIG_FPE_FASTFPE)	+= $(FASTFPE_OBJ)
 core-$(CONFIG_VFP)		+= arch/arm/vfp/
 core-$(CONFIG_XEN)		+= arch/arm/xen/
 core-$(CONFIG_KVM_ARM_HOST) 	+= arch/arm/kvm/
+core-$(CONFIG_VDSO)		+= arch/arm/vdso/
 
 # If we have a machine-specific directory, then include it in the build.
 core-y				+= arch/arm/kernel/ arch/arm/mm/ arch/arm/common/
@@ -326,7 +327,9 @@ $(INSTALL_TARGETS):
 dtbs: scripts
 	$(Q)$(MAKE) $(build)=$(boot)/dts MACHINE=$(MACHINE) dtbs
 #	$(foreach DIR, $(DTSSUBDIR), $(Q)$(MAKE) $(build)=$(boot)/dts/$(DIR) MACHINE=$(MACHINE) dtbs)
-ifeq ($(CONFIG_SEC_MSM8953_PROJECT),y)
+ifeq ($(CONFIG_ARCH_SDM450),y)
+	$(Q)$(MAKE) $(build)=$(boot)/dts/samsung/sdm450
+else ifeq ($(CONFIG_SEC_MSM8953_PROJECT),y)
 	$(Q)$(MAKE) $(build)=$(boot)/dts/samsung/msm8953 MACHINE=$(MACHINE) dtbs
 else ifeq ($(CONFIG_SEC_MSM8937_PROJECT),y)
 	$(Q)$(MAKE) $(build)=$(boot)/dts/samsung/msm8937 MACHINE=$(MACHINE) dtbs
@@ -338,6 +341,18 @@ endif
 
 zImage-dtb: vmlinux scripts dtbs
 	$(Q)$(MAKE) $(build)=$(boot) MACHINE=$(MACHINE) $(boot)/$@
+
+PHONY += vdso_install
+vdso_install:
+ifeq ($(CONFIG_VDSO),y)
+	$(Q)$(MAKE) $(build)=arch/arm/vdso $@
+endif
+
+PHONY += vdso_install
+vdso_install:
+ifeq ($(CONFIG_VDSO),y)
+	$(Q)$(MAKE) $(build)=arch/arm/vdso $@
+endif
 
 # We use MRPROPER_FILES and CLEAN_FILES now
 archclean:
@@ -363,4 +378,5 @@ define archhelp
   echo  '                  Install using (your) ~/bin/$(INSTALLKERNEL) or'
   echo  '                  (distribution) /sbin/$(INSTALLKERNEL) or'
   echo  '                  install to $$(INSTALL_PATH) and run lilo'
+  echo  '  vdso_install  - Install unstripped vdso.so to $$(INSTALL_MOD_PATH)/vdso'
 endef

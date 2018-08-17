@@ -41,20 +41,26 @@
 #include <linux/usb/class-dual-role.h>
 #endif
 
+#if defined(CONFIG_SEC_GTA2XLLTE_PROJECT) || defined(CONFIG_SEC_GTA2XLWIFI_PROJECT)
+#define AVAILABLE_VOLTAGE 9000
+#else
 #define AVAILABLE_VOLTAGE 12000
+#endif
 #define UNIT_FOR_VOLTAGE 50
 #define UNIT_FOR_CURRENT 10
 
 #define REG_I2C_SLV_CMD		0x10
+#define REG_TX_SINK_CAPA_MSG    0x0220
 #define REG_TX_REQUEST_MSG	0x0240
 #define REG_RX_SRC_CAPA_MSG	0x0260
 
-#define CCIC_VERSION_INVALID -1
+#define CCIC_FW_VERSION_INVALID -1
 
 /******************************************************************************/
 /* definitions & structures                                                   */
 /******************************************************************************/
 #define USBPD005_DEV_NAME  "usbpd-s2mm005"
+
 /*
 ******************************************************************************
 * @file    EXT_SRAM.h
@@ -65,6 +71,61 @@
 ******************************************************************************
 */
 /* Define to prevent recursive inclusion -------------------------------------*/
+typedef union
+{
+	uint32_t DATA;
+	struct 
+	{
+		uint32_t Message_Type:4,
+			Rsvd2_msg_header:1,
+			Port_Data_Role:1,
+			Specification_Revision:2,
+			Port_Power_Role:1,
+			Message_ID:3,
+			Number_of_obj:3,
+			Rsvd_msg_header:1,
+			Reserved:16;
+	} BITS;
+} MSG_HEADER_Typedef;
+
+typedef union
+{
+	uint32_t DATA;
+	uint8_t  BYTES[4];
+	struct 
+	{
+		uint32_t Maximum_Current:10,
+			Voltage_Unit:10,
+			Peak_Current:2,
+			Reserved:3,
+			Data_Role_Swap:1,
+			USB_Comm_Capable:1,
+			Externally_POW:1,
+			Higher_Capability:1,
+			Dual_Role_Power:1,
+			PDO_Parameter:2;
+	} BITS;
+} SINK_FIXED_SUPPLY_Typedef;
+
+typedef union
+{
+	uint32_t DATA;
+	uint8_t BYTES[4];
+	struct {
+		uint32_t Operational_Current:10,
+		Minimum_Voltage:10,
+		Maximum_Voltage:10,
+		PDO_Parameter:2;
+	} BITS;
+} SINK_VAR_SUPPLY_Typedef;
+
+typedef union
+{
+	MSG_HEADER_Typedef MSG_HEADER;
+	SINK_FIXED_SUPPLY_Typedef MSG_FIXED_SUPPLY;
+	SINK_VAR_SUPPLY_Typedef MSG_VAR_SUPPLY;
+}SINK_CAPABILITY_MESSAGE_Typedef;
+
 typedef union
 {
     uint32_t DATA;
@@ -158,13 +219,14 @@ typedef union
                     BOOTING_RUN_DRY:1,
                     Sleep_Cable_Detect:1, //b8
                     PDSTATE29_SBU_DONE:1, //b9
-                    RSP_BYTE:22;		 //b10 ~ b31	
+                    RSP_BYTE:22;          //b10 ~ b31
 	} BITS;
 } LP_STATE_Type;
 
 typedef union
 {
 	uint32_t        DATA;
+	uint8_t	BYTE[4];
     struct {
         uint32_t    Flash_State:8,
                     Reserved:24;
@@ -309,11 +371,33 @@ typedef union
                     Vdm_Flag_Enter_Mode:1,          // b4
                     Vdm_Flag_Exit_Mode:1,           // b5
                     Vdm_Flag_Attention:1,           // b6
-                    Vdm_Flag_Reserved:25;           // b7 - b31
-
+					Vdm_Flag_Reserved:9,			// b7 - b15
+					Vdm_Flag_DP_Status_Update:1,	// b16
+					Vdm_Flag_DP_Configure:1,	// b17
+					Vdm_Flag_Reserved2:14;		// b18 - b31
     }BITS;
 } VDM_MSG_IRQ_STATUS_Type;
 
+typedef union
+{
+    uint32_t DATA;
+    uint8_t  BYTES[4];
+    struct {
+        uint32_t    AP_Req_Get:2,                   // b0-b1
+                    UPSM_By_I2C:1,                  // b2
+                    Reserved:1,                     // b3
+                    Is_HardReset:1,                 // b4
+                    FAC_Abnormal_Repeat_State:1,    // b5
+                    FAC_Abnormal_Repeat_RID:1,      // b6
+                    FAC_Abnormal_RID0:1,            // b7
+                    SBU1_CNT:8,                     // b8 - b15
+                    SBU2_CNT:8,                     // b16 - b23
+                    SBU_LOW_CNT:4,                  // b24 - b27
+                    Alt_Mode_By_I2C:2,              // b28 - b29
+                    DPM_START_ON:1,                 // b30
+                    Func_Abnormal_State:1;          // b31
+  } BITS;
+} AP_REQ_GET_STATUS_Type;
 
 typedef union
 {
@@ -325,7 +409,7 @@ typedef union
                     Ssm_Flag_RandomNumber:1,    // b2
                     Ssm_Flag_Encrypted_Data:1,  // b3
                     Ssm_Flag_Unstructured_Data:1,  // b4
-                    Ssm_Flag_Reserved:26,       // b5 - b30
+                    Ssm_Flag_Reserved:26,          // b5 - b30
                     Ssm_Flag_AES_Done:1;
   } BITS;
 } SSM_MSG_IRQ_STATUS_Type;
@@ -386,7 +470,7 @@ typedef struct
     MSG_IRQ_STATUS_Type         MSG_IRQ_STATUS;         // 0x0040h
     VDM_MSG_IRQ_STATUS_Type     VDM_MSG_IRQ_STATUS;     // 0x0044h
     SSM_MSG_IRQ_STATUS_Type     SSM_MSG_IRQ_STATUS;     // 0x0048h
-    VDM_MSG_IRQ_STATUS_Type     DBG_VDM_MSG_IRQ_STATUS;     // 0x004Ch
+    AP_REQ_GET_STATUS_Type      AP_REQ_GET_STATUS;      // 0x004Ch
     SSM_HW_ID_VALUE_Type        SSM_HW_ID_VALUE;        // 0x0050h
     SSM_HW_PID_VALUE_Type       SSM_HW_PID_VALUE;       // 0x0054h
     SSM_HW_USE_MSG_Type         SSM_HW_USE_MSG;         // 0x0058h
@@ -688,6 +772,8 @@ typedef enum {
 
 	// Type-C referenced states
 	State_ErrorRecovery									= 29,
+	State_PE_PRS_SRC_SNK_Transition_to_off		= 52,
+	State_PE_PRS_SNK_SRC_Source_on		= 64,
 } function_status_t;
 #if defined(CONFIG_DUAL_ROLE_USB_INTF)
 typedef enum
@@ -757,7 +843,11 @@ struct s2mm005_data {
 	int prev_rid;
 	int cur_rid;
 	int water_det;
-	int booting_water_det;
+	int run_dry;
+	int booting_run_dry;
+#if defined(CONFIG_SEC_FACTORY)
+	int fac_booting_dry_check;
+#endif
 
 	u8 firm_ver[4];
 
@@ -778,9 +868,20 @@ struct s2mm005_data {
 	uint32_t acc_type;
 	uint32_t Vendor_ID;
 	uint32_t Product_ID;
+	uint32_t Device_Version;	
 	uint32_t SVID_0;
 	uint32_t SVID_1;
 	struct delayed_work acc_detach_work;
+	uint32_t dp_is_connect;
+	u8 pin_assignment;
+	uint32_t selected_pin;
+	uint32_t is_sent_pin_configuration;
+	struct completion suspend_wait;
+	struct completion resume_wait;
+	wait_queue_head_t host_turn_on_wait_q;
+	int host_turn_on_event;
+	int host_turn_on_wait_time;
+	int is_samsung_accessory_enter_mode;
 #endif
 	int manual_lpm_mode;
 #if defined(CONFIG_DUAL_ROLE_USB_INTF)
@@ -792,9 +893,13 @@ struct s2mm005_data {
 	struct delayed_work role_swap_work;
 #endif
 
+	int s2mm005_fw_product_id;
+	u8 fw_product_id;
+
 #if defined(CONFIG_SEC_FACTORY)
 	int fac_water_enable;
 #endif
-
+	struct delayed_work usb_external_notifier_register_work;
+	struct notifier_block usb_external_notifier_nb;
 };
 #endif /* __S2MM005_H */

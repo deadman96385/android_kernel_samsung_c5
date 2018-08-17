@@ -381,6 +381,15 @@ static inline void early_memtest(phys_addr_t start, phys_addr_t end)
 }
 #endif
 
+enum memsize_kernel_type {
+	MEMSIZE_KERNEL_EARLY_PARAM,
+	MEMSIZE_KERNEL_PAGING,
+	MEMSIZE_KERNEL_OTHERS,
+	MEMSIZE_KERNEL_STOP,
+};
+
+void set_memsize_kernel_type(enum memsize_kernel_type type);
+
 #else
 static inline phys_addr_t memblock_alloc(phys_addr_t size, phys_addr_t align)
 {

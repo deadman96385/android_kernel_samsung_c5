@@ -105,14 +105,15 @@ static ssize_t magnetic_check_cntl(struct device *dev,
 		struct device_attribute *attr, char *strbuf)
 {
 	bool bSuccess = false;
-	int ret;
 	char chTempBuf[22] = { 0,  };
 	struct ssp_data *data = dev_get_drvdata(dev);
-	struct ssp_msg *msg;
 
 	if (!data->uMagCntlRegData) {
 		bSuccess = true;
 	} else {
+		int ret;
+		struct ssp_msg *msg;
+		
 		pr_info("[SSP] %s - check cntl register before selftest",
 			__func__);
 		msg = kzalloc(sizeof(*msg), GFP_KERNEL);
@@ -241,7 +242,7 @@ Retry_selftest:
 	data->buf[SENSOR_TYPE_GEOMAGNETIC_POWER].y = 0;
 	data->buf[SENSOR_TYPE_GEOMAGNETIC_POWER].z = 0;
 
-	if (!(atomic64_read(&data->aSensorEnable) & (1 << SENSOR_TYPE_GEOMAGNETIC_POWER)))
+	if (!(atomic64_read(&data->aSensorEnable) & (1ULL << SENSOR_TYPE_GEOMAGNETIC_POWER)))
 		send_instruction(data, ADD_SENSOR, SENSOR_TYPE_GEOMAGNETIC_POWER,
 			bufAdc, 4);
 
@@ -258,7 +259,7 @@ Retry_selftest:
 	iADC_Y = data->buf[SENSOR_TYPE_GEOMAGNETIC_POWER].y;
 	iADC_Z = data->buf[SENSOR_TYPE_GEOMAGNETIC_POWER].z;
 
-	if (!(atomic64_read(&data->aSensorEnable) & (1 << SENSOR_TYPE_GEOMAGNETIC_POWER)))
+	if (!(atomic64_read(&data->aSensorEnable) & (1ULL << SENSOR_TYPE_GEOMAGNETIC_POWER)))
 		send_instruction(data, REMOVE_SENSOR, SENSOR_TYPE_GEOMAGNETIC_POWER,
 			bufAdc, 4);
 
@@ -573,7 +574,6 @@ int get_hw_offset(struct ssp_data *data)
 
 int mag_store_hwoffset(struct ssp_data *data)
 {
-	int iRet = 0;
 	struct file *cal_filp = NULL;
 	mm_segment_t old_fs;
 
@@ -581,6 +581,8 @@ int mag_store_hwoffset(struct ssp_data *data)
 		pr_err("[SSP]: %s - get_hw_offset failed\n", __func__);
 		return ERROR;
 	} else {
+		int iRet = 0;
+	
 		old_fs = get_fs();
 		set_fs(KERNEL_DS);
 
@@ -853,7 +855,6 @@ static ssize_t raw_data_store(struct device *dev,
 	char chTempbuf[4] = { 0 };
 	int ret;
 	int64_t dEnable;
-	int retries = 50;
 	struct ssp_data *data = dev_get_drvdata(dev);
 	s32 dMsDelay = 20;
 	memcpy(&chTempbuf[0], &dMsDelay, 4);
@@ -863,6 +864,8 @@ static ssize_t raw_data_store(struct device *dev,
 		return ret;
 
 	if (dEnable) {
+		int retries = 50;
+		
 		data->buf[SENSOR_TYPE_GEOMAGNETIC_POWER].x = 0;
 		data->buf[SENSOR_TYPE_GEOMAGNETIC_POWER].y = 0;
 		data->buf[SENSOR_TYPE_GEOMAGNETIC_POWER].z = 0;
@@ -913,7 +916,7 @@ static ssize_t adc_data_read(struct device *dev,
 	data->buf[SENSOR_TYPE_GEOMAGNETIC_FIELD].y = 0;
 	data->buf[SENSOR_TYPE_GEOMAGNETIC_FIELD].z = 0;
 
-	if (!(atomic64_read(&data->aSensorEnable) & (1 << SENSOR_TYPE_GEOMAGNETIC_FIELD)))
+	if (!(atomic64_read(&data->aSensorEnable) & (1ULL << SENSOR_TYPE_GEOMAGNETIC_FIELD)))
 		send_instruction(data, ADD_SENSOR, SENSOR_TYPE_GEOMAGNETIC_FIELD,
 			chTempbuf, 4);
 
@@ -930,7 +933,7 @@ static ssize_t adc_data_read(struct device *dev,
 	iSensorBuf[1] = data->buf[SENSOR_TYPE_GEOMAGNETIC_FIELD].y;
 	iSensorBuf[2] = data->buf[SENSOR_TYPE_GEOMAGNETIC_FIELD].z;
 
-	if (!(atomic64_read(&data->aSensorEnable) & (1 << SENSOR_TYPE_GEOMAGNETIC_FIELD)))
+	if (!(atomic64_read(&data->aSensorEnable) & (1ULL << SENSOR_TYPE_GEOMAGNETIC_FIELD)))
 		send_instruction(data, REMOVE_SENSOR, SENSOR_TYPE_GEOMAGNETIC_FIELD,
 			chTempbuf, 4);
 

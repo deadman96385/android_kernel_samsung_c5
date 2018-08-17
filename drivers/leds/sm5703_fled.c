@@ -115,13 +115,25 @@ static ssize_t flash_show(struct device *dev,
   return snprintf(buf, sizeof(flash_state), flash_state, assistive_light);
 }
 
+#if defined(CONFIG_ACTIVE_FLASH)
+// Tuning factor
+#if defined(CONFIG_SEC_GTA2SLTE_PROJECT)||defined(CONFIG_SEC_GTA2SWIFI_PROJECT)
+static int torchlevel[] = {1, 3, 3, 6, 8, 10, 11, 13, 14, 17};
+#elif defined(CONFIG_SEC_J2Y18LTE_PROJECT)
+static int torchlevel[] = {1, 3, 3, 5, 5, 9, 9, 9, 12, 12};
+#elif defined(CONFIG_SEC_J3POPLTE_PROJECT)||defined(CONFIG_SEC_J3Y17QLTE_PROJECT)
+static int torchlevel[] = {1, 3, 5, 5, 7, 9, 10, 11, 12, 14};
+#else //default
+static int torchlevel[] = {1, 3, 5, 7, 9, 11, 13, 15, 17, 19};
+#endif
+#endif
+
 static ssize_t flash_store(struct device *dev, struct device_attribute *attr,
 		const char *buf, size_t count)
 {
 	int sel = 0;
 	sm_fled_info_t *fled_info = sm_fled_get_info_by_name(NULL);
 	int i, nValue=0;
-
 	BUG_ON(fled_info == NULL);
 
 	for(i=0; i<count; i++) {
@@ -161,46 +173,24 @@ static ssize_t flash_store(struct device *dev, struct device_attribute *attr,
 			factory_light = true;
 			sm5703_fled_set_movie(fled_info, 13);
 			break;
-#if defined(CONFIG_ACTIVE_FLASH)
-		case 1001:
-		case 1002:
-		case 1003:
-#if defined(CONFIG_SEC_J3POPLTE_PROJECT)||defined(CONFIG_SEC_J3Y17QLTE_PROJECT)||defined(CONFIG_SEC_GTAXLQLTE_USA_SPR)
-			pr_err("Torch ON-F active\n");
-			assistive_light = true;
-			sel = (nValue - 1001)*2 + 1;
-			sm5703_fled_set_movie(fled_info, sel);
-			break;
-#endif
-		case 1004:
-		case 1005:
-		case 1006:
-		case 1007:
-		case 1008:
-#if defined(CONFIG_SEC_J3POPLTE_PROJECT)||defined(CONFIG_SEC_J3Y17QLTE_PROJECT)||defined(CONFIG_SEC_GTAXLQLTE_USA_SPR)
-			pr_err("Torch ON-F active\n");
-			assistive_light = true;
-			sel = (nValue - 1001)*2 - 1;
-			sm5703_fled_set_movie(fled_info, sel);
-			break;
-#endif
-		case 1009:
-		case 1010:
-			pr_err("Torch ON-F active\n");
-			assistive_light = true;
-#if defined(CONFIG_SEC_J3POPLTE_PROJECT)||defined(CONFIG_SEC_J3Y17QLTE_PROJECT)||defined(CONFIG_SEC_GTAXLQLTE_USA_SPR)
-			sel = (nValue - 1001)*2 - 4;
-#else
-			sel = (nValue - 1001)*2 + 1;
-#endif
-			sm5703_fled_set_movie(fled_info, sel);
-			break;
-#endif
 		default:
-			pr_err("Torch NC:%d\n", nValue);
-			sm5703_fled_set_movie(fled_info, SM5703_MOVIE_CURRENT(nValue));
+#if defined(CONFIG_ACTIVE_FLASH)
+			if (nValue>1000 && nValue<=1010) {
+				pr_err("Torch ON-F active\n");
+				assistive_light = true;
+				sel = torchlevel[nValue - 1001];
+				sm5703_fled_set_movie(fled_info, sel);
+			}
+			else {
+#endif
+			        pr_err("Torch NC:%d\n", nValue); 
+				assistive_light = true; 
+				sm5703_fled_set_movie(fled_info, SM5703_MOVIE_CURRENT(nValue)); 
+#if defined(CONFIG_ACTIVE_FLASH)
+			}
+#endif
 			break;
-	}
+	}  
 
 	return count;
 }
@@ -307,6 +297,8 @@ int msm_fled_led_off_sm5703(ext_pmic_flash_ctrl_t *flash_ctrl)
 {
 	sm_fled_info_t *fled_info = sm_fled_get_info_by_name(NULL);
 
+	IS_FLASH_VALID(fled_info);
+
 	sm5703_fled_set_movie_current_sel(fled_info, 0);
 	return sm5703_fled_led_off(fled_info);
 }
@@ -336,6 +328,8 @@ EXPORT_SYMBOL(sm5703_fled_torch_on);
 int msm_fled_torch_on_sm5703(ext_pmic_flash_ctrl_t *flash_ctrl)
 {
 	sm_fled_info_t *fled_info = sm_fled_get_info_by_name(NULL);
+	IS_FLASH_VALID(fled_info);
+
 	return sm5703_fled_torch_on(fled_info);
 }
 EXPORT_SYMBOL(msm_fled_torch_on_sm5703);
@@ -365,6 +359,12 @@ EXPORT_SYMBOL(sm5703_fled_flash_on);
 int msm_fled_flash_on_sm5703(ext_pmic_flash_ctrl_t *flash_ctrl)
 {
 	sm_fled_info_t *fled_info = sm_fled_get_info_by_name(NULL);
+	sm5703_fled_info_t *info = (sm5703_fled_info_t *)fled_info;
+
+	IS_FLASH_VALID(info);
+	
+	SM5703_FLED_INFO("%s, actual_current = %d\n",__FUNCTION__, info->pdata->fled_flash_current);
+	sm5703_fled_set_flash_current_sel(fled_info,info->pdata->fled_flash_current);
 	return sm5703_fled_flash_on(fled_info);
 }
 EXPORT_SYMBOL(msm_fled_flash_on_sm5703);
@@ -374,6 +374,8 @@ int msm_fled_pre_flash_on_sm5703(ext_pmic_flash_ctrl_t *flash_ctrl)
 	sm_fled_info_t *fled_info = sm_fled_get_info_by_name(NULL);
 	sm5703_fled_info_t *info = (sm5703_fled_info_t *)fled_info; 
 	unsigned int actual_current = 0;
+
+	IS_FLASH_VALID(info);
 
 	if (flash_ctrl->flash_current_mA > 0)
 		actual_current = SM5703_MOVIE_CURRENT(flash_ctrl->flash_current_mA);
@@ -391,6 +393,8 @@ int msm_fled_flash_on_set_current_sm5703(ext_pmic_flash_ctrl_t *flash_ctrl)
 	sm_fled_info_t *fled_info = sm_fled_get_info_by_name(NULL);
 	sm5703_fled_info_t *info = (sm5703_fled_info_t *)fled_info; 
 	unsigned int actual_current = 0;
+
+	IS_FLASH_VALID(info);
 
 	if (flash_ctrl->flash_current_mA > 0)
 		actual_current = SM5703_FLASH_CURRENT(flash_ctrl->flash_current_mA);

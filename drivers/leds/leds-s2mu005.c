@@ -248,7 +248,7 @@ static void led_set(struct s2mu005_led_data *led_data)
 #endif
 	pr_info("%s start led_set\n", __func__);
 
-	if (led_data->test_brightness == LED_OFF) {
+	if (led_data->test_brightness == LED_OFF && !assistive_light) {
 		pr_info("%s: LED off set brightness =%d",__func__,led_data->data->brightness);
 		ret = s2mu005_update_reg(led_data->i2c, reg,
 				led_data->data->brightness, mask);
@@ -498,7 +498,7 @@ int ss_rear_flash_led_torch_on()
 	struct i2c_client * client;
 	client = g_led_datas[S2MU005_FLASH_LED]->i2c;
 
-	s2mu005_update_reg(client,CH_FLASH_TORCH_EN,S2MU005_FLASH_TORCH_OFF,S2MU005_CH1_FLASH_TORCH_OFF_MASK);
+//	s2mu005_update_reg(client,CH_FLASH_TORCH_EN,S2MU005_FLASH_TORCH_OFF,S2MU005_CH1_FLASH_TORCH_OFF_MASK);
 	return s2mu005_update_reg(client,CH_FLASH_TORCH_EN,S2MU005_TORCH_ON_I2C,S2MU005_CH1_FLASH_TORCH_OFF_MASK);
 	
 }EXPORT_SYMBOL_GPL(ss_rear_flash_led_torch_on);
@@ -648,21 +648,46 @@ static ssize_t rear_flash_store(struct device *dev,
 		goto err;
 	}*/
 
-	if (value == 0) {
-		/* Turn off Torch */
-		brightness = LED_OFF;
-		assistive_light = false;
-	} else if (value == 1) {
-		/* Turn on Torch */
-		brightness = led_data->preflash_brightness;
-		assistive_light = true;
-	} else if (value == 100) {
-		/* Factory mode Turn on Torch */
-		brightness = led_data->factory_brightness;
-		assistive_light = true;
-	} else {
-		pr_err("[FLED]%s , Invalid value:%d\n", __func__, value);
-		goto err;
+	switch(value) {
+		case 0:
+			/* Turn off Torch */
+			brightness = LED_OFF;
+			assistive_light = false;
+			break;
+		case 1:
+			/* Turn on Torch */
+			brightness = led_data->preflash_brightness;
+			assistive_light = true;
+			break;
+		case 100:
+			/* Factory mode Turn on Torch */
+			brightness = led_data->factory_brightness;
+			assistive_light = true;
+			break;
+		/* 5-level brightness for torch */
+		case 1001:
+			brightness = S2MU005_TORCH_OUT_I_25MA;
+			assistive_light = true;
+			break;
+		case 1002:
+			brightness = S2MU005_TORCH_OUT_I_50MA;
+			assistive_light = true;
+			break;
+		case 1004:
+			brightness = S2MU005_TORCH_OUT_I_75MA;
+			assistive_light = true;
+			break;
+		case 1006:
+			brightness = S2MU005_TORCH_OUT_I_100MA;
+			assistive_light = true;
+			break;
+		case 1009:
+			brightness = S2MU005_TORCH_OUT_I_125MA;
+			assistive_light = true;
+			break;
+		default:
+			pr_err("[FLED]%s , Invalid value:%d\n", __func__, value);
+			goto err;
 	}
 
 	if (led_cdev->flags & LED_SUSPENDED) {

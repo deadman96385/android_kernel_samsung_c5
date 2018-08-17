@@ -1843,13 +1843,6 @@ static ssize_t cmd_store(struct device *dev, struct device_attribute *attr,
 		return -EINVAL;
 	}
 
-	if (count >= (unsigned int)CMD_STR_LEN) {
-		input_err(true, &rmi4_data->i2c_client->dev,
-			"%s: cmd length(count) is over (%d,%s)!!\n",
-			__func__, (unsigned int)count, buf);
-		return -EINVAL;
-	}
-
 	if (data->cmd_is_running == true) {
 		input_err(true, &rmi4_data->i2c_client->dev, "%s: Still servicing previous command. Skip cmd :%s\n",
 			 __func__, buf);

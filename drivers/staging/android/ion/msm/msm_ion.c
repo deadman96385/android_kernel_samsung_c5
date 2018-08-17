@@ -119,6 +119,28 @@ static struct ion_heap_desc ion_heap_meta[] = {
 };
 #endif
 
+static int ion_system_heap_size_notifier(struct notifier_block *nb,
+					 unsigned long action, void *data)
+{
+	show_ion_system_heap_size((struct seq_file *)data);
+	return 0;
+}
+
+static struct notifier_block ion_system_heap_nb = {
+	.notifier_call = ion_system_heap_size_notifier,
+};
+
+static int ion_system_heap_pool_size_notifier(struct notifier_block *nb,
+					      unsigned long action, void *data)
+{
+	show_ion_system_heap_pool_size((struct seq_file *)data);
+	return 0;
+}
+
+static struct notifier_block ion_system_heap_pool_nb = {
+	.notifier_call = ion_system_heap_pool_size_notifier,
+};
+
 static int msm_ion_lowmem_notifier(struct notifier_block *nb,
 					unsigned long action, void *data)
 {
@@ -705,7 +727,7 @@ long msm_ion_custom_ioctl(struct ion_client *client,
 		} else {
 			handle = ion_import_dma_buf(client, data.flush_data.fd);
 			if (IS_ERR(handle)) {
-				pr_info("%s: Could not import handle: %p\n",
+				pr_info("%s: Could not import handle: %pK\n",
 					__func__, handle);
 				return -EINVAL;
 			}
@@ -718,7 +740,7 @@ long msm_ion_custom_ioctl(struct ion_client *client,
 			+ data.flush_data.length;
 
 		if (start && check_vaddr_bounds(start, end)) {
-			pr_err("%s: virtual address %p is out of bounds\n",
+			pr_err("%s: virtual address %pK is out of bounds\n",
 				__func__, data.flush_data.vaddr);
 			ret = -EINVAL;
 		} else {
@@ -1048,6 +1070,9 @@ static int msm_ion_probe(struct platform_device *pdev)
 	idev = new_dev;
 
 	show_mem_notifier_register(&msm_ion_nb);
+	show_mem_extra_notifier_register(&ion_system_heap_nb);
+	show_mem_extra_notifier_register(&ion_system_heap_pool_nb);
+
 	return 0;
 
 freeheaps:
@@ -1068,6 +1093,8 @@ static int msm_ion_remove(struct platform_device *pdev)
 
 	ion_device_destroy(idev);
 	kfree(heaps);
+	show_mem_extra_notifier_unregister(&ion_system_heap_nb);
+	show_mem_extra_notifier_unregister(&ion_system_heap_pool_nb);
 	return 0;
 }
 

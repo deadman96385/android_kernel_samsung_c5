@@ -2035,4 +2035,3 @@ int rt5665_set_jack_detect(struct snd_soc_codec *codec,
 	struct snd_soc_jack *hs_jack);
 
 #endif /* __RT5665_H__ */
-

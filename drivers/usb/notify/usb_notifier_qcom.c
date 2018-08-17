@@ -19,15 +19,17 @@
 #if defined(CONFIG_CCIC_NOTIFIER)
 #include <linux/ccic/ccic_notifier.h>
 #endif
-#ifdef CONFIG_MUIC_NOTIFIER
+#if defined(CONFIG_MUIC_NOTIFIER)
 #include <linux/muic/muic.h>
 #include <linux/muic/muic_notifier.h>
 #endif
-#ifdef CONFIG_VBUS_NOTIFIER
+#if defined(CONFIG_VBUS_NOTIFIER)
 #include <linux/vbus_notifier.h>
 #endif
-#ifdef CONFIG_BATTERY_SAMSUNG_V2
+#if defined(CONFIG_BATTERY_SAMSUNG_V2)
 #include "../../battery_v2/include/sec_charging_common.h"
+#elif defined(CONFIG_BATTERY_SAMSUNG_V2_LEGACY)
+#include "../../battery_v2_legacy/include/sec_charging_common.h"
 #else
 #include <linux/battery/sec_charging_common.h>
 #endif
@@ -43,10 +45,17 @@
 
 extern void set_ncm_ready(bool ready);
 
+#if defined(CONFIG_MUIC_SM570X_SWITCH_CONTROL_GPIO)
+extern int muic_GPIO_control(int gpio);
+#endif
+
+#if defined(CONFIG_CCIC_NOTIFIER)
+int is_host;
+#endif
+
 struct usb_notifier_platform_data {
 #if defined(CONFIG_CCIC_NOTIFIER)
 	struct	notifier_block ccic_usb_nb;
-	int is_host;
 #endif
 #if defined(CONFIG_MUIC_NOTIFIER)
 	struct	notifier_block muic_usb_nb;
@@ -111,8 +120,6 @@ static int ccic_usb_handle_notification(struct notifier_block *nb,
 {
 	CC_NOTI_USB_STATUS_TYPEDEF usb_status = * (CC_NOTI_USB_STATUS_TYPEDEF *)data;
 	struct otg_notify *o_notify = get_otg_notify();
-	struct usb_notifier_platform_data *pdata =
-		container_of(nb, struct usb_notifier_platform_data, ccic_usb_nb);
 
 	if(usb_status.dest != CCIC_NOTIFY_DEV_USB) {
 		return 0;
@@ -120,9 +127,13 @@ static int ccic_usb_handle_notification(struct notifier_block *nb,
 
 	switch (usb_status.drp){
 		case USB_STATUS_NOTIFY_ATTACH_DFP:
-			pr_info("%s: Turn On Host(DFP)\n", __func__);
+			pr_info("%s: Turn On Host(DFP), max speed restrict = %d\n", __func__, usb_status.sub3);	
+#if defined(CONFIG_MUIC_SM570X_SWITCH_CONTROL_GPIO)
+/* set USB_ID pin high to let MUIC doesn't do BC1.2 charging when OTG connected*/
+			muic_GPIO_control(1);
+#endif
 			send_otg_notify(o_notify, NOTIFY_EVENT_HOST, 1);
-			pdata->is_host = 1;
+			is_host = 1;
 			break;
 		case USB_STATUS_NOTIFY_ATTACH_UFP:
 			pr_info("%s: Turn On Device(UFP)\n", __func__);
@@ -131,10 +142,13 @@ static int ccic_usb_handle_notification(struct notifier_block *nb,
 				return -EPERM;
 			break;
 		case USB_STATUS_NOTIFY_DETACH:
-			if(pdata->is_host) {
+			if(is_host) {
 				pr_info("%s: Turn Off Host(DFP)\n", __func__);
+#if defined(CONFIG_MUIC_SM570X_SWITCH_CONTROL_GPIO)
+				muic_GPIO_control(0);
+#endif
 				send_otg_notify(o_notify, NOTIFY_EVENT_HOST, 0);
-				pdata->is_host = 0;
+				is_host = 0;
 			} else {
 				pr_info("%s: Turn Off Device(UFP)\n", __func__);
 				send_otg_notify(o_notify, NOTIFY_EVENT_VBUS, 0);
@@ -164,7 +178,6 @@ static int muic_usb_handle_notification(struct notifier_block *nb,
 	switch (attached_dev) {
 	case ATTACHED_DEV_USB_MUIC:
 	case ATTACHED_DEV_CDP_MUIC:
-	case ATTACHED_DEV_UNOFFICIAL_ID_USB_MUIC:
 	case ATTACHED_DEV_UNOFFICIAL_ID_CDP_MUIC:
 	case ATTACHED_DEV_JIG_USB_OFF_MUIC:
 	case ATTACHED_DEV_JIG_USB_ON_MUIC:
@@ -258,7 +271,7 @@ static int muic_usb_handle_notification(struct notifier_block *nb,
 }
 #endif
 
-#ifdef CONFIG_VBUS_NOTIFIER
+#if defined(CONFIG_VBUS_NOTIFIER)
 static int vbus_handle_notification(struct notifier_block *nb,
 		unsigned long cmd, void *data)
 {
@@ -291,11 +304,6 @@ static int otg_accessory_power(bool enable)
 	int on = !!enable;
 	int current_cable_type;
 	int ret = 0;
-#if !defined(CONFIG_CCIC_NOTIFIER)
-	struct otg_notify *o_notify = get_otg_notify();
-	if (enable && o_notify)
-		o_notify->hw_param[USB_CCIC_OTG_USE_COUNT]++;
-#endif
 	pr_info("%s %d, enable=%d\n", __func__, __LINE__, enable);
 	/* otg psy test */
 	psy_otg = get_power_supply_by_name("otg");
@@ -370,10 +378,17 @@ static int set_online(int event, int state)
 		return -1;
 	}
 
+#ifdef CONFIG_BATTERY_SAMSUNG_V2
+	if (state)
+		value.intval = SEC_BATTERY_CABLE_SMART_OTG;
+	else
+		value.intval = SEC_BATTERY_CABLE_SMART_NOTG;
+#else
 	if (state)
 		value.intval = POWER_SUPPLY_TYPE_SMART_OTG;
 	else
 		value.intval = POWER_SUPPLY_TYPE_SMART_NOTG;
+#endif
 
 	psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE, &value);
 	return 0;
@@ -409,7 +424,7 @@ static int usb_blocked_chg_control(int set)
 		val.intval = USB_CURRENT_UNCONFIGURED;
 
 	psy_do_property("battery", set,
-#ifdef CONFIG_BATTERY_SAMSUNG_V2
+#if defined(CONFIG_BATTERY_SAMSUNG_V2) || defined(CONFIG_BATTERY_SAMSUNG_V2_LEGACY)
 		POWER_SUPPLY_EXT_PROP_USB_CONFIGURE, val);
 #else
 		POWER_SUPPLY_PROP_USB_CONFIGURE, val);
@@ -438,6 +453,9 @@ static struct otg_notify sec_otg_notify = {
 	.set_chg_current = usb_blocked_chg_control,
 #endif
 	.set_battcall = set_online,
+#if defined(CONFIG_USB_OTG_WHITELIST_FOR_MDM)
+	.sec_whitelist_enable = 0,
+#endif
 };
 
 static int usb_notifier_probe(struct platform_device *pdev)
@@ -473,7 +491,7 @@ static int usb_notifier_probe(struct platform_device *pdev)
 	set_otg_notify(&sec_otg_notify);
 	set_notify_data(&sec_otg_notify, pdata);
 #if defined(CONFIG_CCIC_NOTIFIER)
-	pdata->is_host = 0;
+	is_host = 0;
 #ifdef CONFIG_USB_TYPEC_MANAGER_NOTIFIER
 	manager_notifier_register(&pdata->ccic_usb_nb, ccic_usb_handle_notification,
 		MANAGER_NOTIFY_CCIC_USB);
@@ -489,7 +507,6 @@ static int usb_notifier_probe(struct platform_device *pdev)
 	vbus_notifier_register(&pdata->vbus_nb, vbus_handle_notification,
 			       MUIC_NOTIFY_DEV_USB);
 #endif
-
 	dev_info(&pdev->dev, "usb notifier probe\n");
 	return 0;
 }

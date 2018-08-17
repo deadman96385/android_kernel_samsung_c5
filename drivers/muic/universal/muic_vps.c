@@ -30,6 +30,7 @@
 #include <linux/host_notify.h>
 
 #include <linux/muic/muic.h>
+#include <linux/usb_notify.h>
 
 #if defined(CONFIG_MUIC_NOTIFIER)
 #include <linux/muic/muic_notifier.h>
@@ -79,7 +80,7 @@
 #define DEV_TYPE3_AV_WITH_VBUS		(0x1 << 4)
 #define DEV_TYPE3_NO_STD_CHG		(0x1 << 2)
 #define DEV_TYPE3_MHL			(0x1 << 0)
-#if defined(CONFIG_MUIC_UNIVERSAL_SM5705)
+#if defined(CONFIG_MUIC_UNIVERSAL_SM5705) || defined(CONFIG_MUIC_UNIVERSAL_SM5708)
 #define DEV_TYPE3_LO_TA			(0x1 << 5)
 #define DEV_TYPE3_CHG_TYPE	(DEV_TYPE3_U200_CHG | DEV_TYPE3_NO_STD_CHG | \
 				DEV_TYPE3_LO_TA)
@@ -93,15 +94,15 @@ static struct vps_cfg cfg_MHL = {
 };
 static struct vps_cfg cfg_SEND = {
 	.name = "SEND",
-	.attr = MATTR(VCOM_AUDIO, VB_ANY) | MATTR_SUPP,
+	.attr = MATTR(VCOM_AUDIO, VB_ANY),
 };
 static struct vps_cfg cfg_VOLDN = {
 	.name = "VOLDN",
-	.attr = MATTR(VCOM_AUDIO, VB_ANY) | MATTR_SUPP,
+	.attr = MATTR(VCOM_AUDIO, VB_ANY),
 };
 static struct vps_cfg cfg_VOLUP = {
 	.name = "VOLUP",
-	.attr = MATTR(VCOM_AUDIO, VB_ANY) | MATTR_SUPP,
+	.attr = MATTR(VCOM_AUDIO, VB_ANY),
 };
 static struct vps_cfg cfg_OTG = {
 	.name = "OTG",
@@ -172,7 +173,7 @@ static struct vps_cfg cfg_JIG_UART_ON = {
 };
 static struct vps_cfg cfg_EARJACK = {
 	.name = "EAR JACK",
-	.attr = MATTR(VCOM_AUDIO, VB_ANY) | MATTR_SUPP,
+	.attr = MATTR(VCOM_AUDIO, VB_ANY),
 };
 static struct vps_cfg cfg_TA = {
 	.name = "TA",
@@ -220,6 +221,9 @@ static struct vps_tbl_data vps_table[] = {
 	[MDEV(EARJACK)]		= {0x1e, "1M",	&cfg_EARJACK,},	/* 0x1e : Audio Mode with Remote */
 	[MDEV(TA)]			= {0x1f, "OPEN",	&cfg_TA,},
 	[MDEV(USB)]			= {0x1f, "OPEN",	&cfg_USB,},
+#ifndef CONFIG_MUIC_SUPPORT_CCIC
+	[MDEV(UNOFFICIAL_ID_USB)]	= {0x1f, "OPEN",	&cfg_USB,},
+#endif	
 	[MDEV(CDP)]			= {0x1f, "OPEN",	&cfg_CDP,},
 	[MDEV(UNDEFINED_CHARGING)]	= {0xfe, "UNDEFINED",	&cfg_UNDEFINED_CHARGING,},
 	[ATTACHED_DEV_NUM]		= {0x00, "NUM", NULL,},
@@ -589,7 +593,9 @@ static int resolve_dedicated_dev(muic_data_t *pmuic, muic_attached_dev_t *pdev, 
 	int val1, val2, val3;
 
 #if defined(CONFIG_MUIC_SM570X_SWITCH_CONTROL_GPIO) && defined(CONFIG_MUIC_UNIVERSAL_SM5703)
+	int is_UPSM = 0;
 	struct vendor_ops *pvendor = pmuic->regmapdesc->vendorops;
+	struct otg_notify *o_notify = get_otg_notify();
 #endif
 	val1 = pmuic->vps.s.val1;
 	val2 = pmuic->vps.s.val2;
@@ -600,19 +606,16 @@ static int resolve_dedicated_dev(muic_data_t *pmuic, muic_attached_dev_t *pdev, 
 	/* Attached */
 	switch (val1) {
 	case DEV_TYPE1_CDP:
-		if (!vbvolt) break;
 		intr = MUIC_INTR_ATTACH;
 		new_dev = ATTACHED_DEV_CDP_MUIC;
 		pr_info("%s : USB_CDP DETECTED\n", MUIC_DEV_NAME);
 		break;
 	case DEV_TYPE1_USB:
-		if (!vbvolt) break;
 		intr = MUIC_INTR_ATTACH;
 		new_dev = ATTACHED_DEV_USB_MUIC;
 		pr_info("%s : USB DETECTED\n", MUIC_DEV_NAME);
 		break;
 	case DEV_TYPE1_DEDICATED_CHG:
-		if (!vbvolt) break;
 		intr = MUIC_INTR_ATTACH;
 		new_dev = ATTACHED_DEV_TA_MUIC;
 		pr_info("%s : DEDICATED CHARGER DETECTED\n", MUIC_DEV_NAME);
@@ -668,7 +671,11 @@ static int resolve_dedicated_dev(muic_data_t *pmuic, muic_attached_dev_t *pdev, 
 			&& (adc != ADC_UART_CABLE)
 #endif			
 			){
+#if defined(CONFIG_MUIC_SUPPORT_CCIC)
 			new_dev = ATTACHED_DEV_USB_MUIC;
+#else			
+			new_dev = ATTACHED_DEV_UNOFFICIAL_ID_USB_MUIC;
+#endif			
 			pr_info("%s : TYPE3 DCD_OUT_TIMEOUT DETECTED\n", MUIC_DEV_NAME);
 		} else 
 		{
@@ -824,11 +831,17 @@ static int resolve_dedicated_dev(muic_data_t *pmuic, muic_attached_dev_t *pdev, 
 		case ADC_UART_CABLE:
 		    new_dev = ATTACHED_DEV_UART_MUIC;
 		    intr = MUIC_INTR_ATTACH;
+/* SM5703 LanHub patch for CCIC
+ * When UPSM mode, It should not VBUS_FET reset.
+ */
 #if defined(CONFIG_MUIC_UNIVERSAL_SM5703)
-			/* LanHub patch for CCIC */
+			is_UPSM = is_blocked(o_notify, NOTIFY_BLOCK_TYPE_ALL);
 			if (muic_get_current_legacy_dev(pmuic) == ATTACHED_DEV_OTG_MUIC) {
-				pr_info("%s : OTG DETECTED, reset vbus path\n", __func__);
-				pvendor->reset_vbus_path(pmuic->regmapdesc);
+				pr_info("%s : OTG DETECTED (%d)\n", __func__, is_UPSM);
+				if (!is_UPSM) {
+					pr_info("%s : reset vbus path\n", __func__);
+					pvendor->reset_vbus_path(pmuic->regmapdesc);
+				}
 			}
 			else
 #endif

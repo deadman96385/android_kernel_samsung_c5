@@ -1199,8 +1199,6 @@ static bool sm5705_fg_init(struct i2c_client *client, bool is_surge)
 		sm5705_fg_i2c_write_word(client, SM5705_REG_CURRLCAL_2, fuelgauge->info.curr_lcal_2);
 	}
 
-	fuelgauge->info.is_FG_initialised = 1;
-
 	// get first measure all value
 	//soc
 	sm5705_get_soc(client);
@@ -1227,6 +1225,8 @@ static bool sm5705_fg_init(struct i2c_client *client, bool is_surge)
 	// for debug
 	sm5705_fg_buffer_read(client);
 	sm5705_fg_test_read(client);
+
+	fuelgauge->info.is_FG_initialised = 1;
 
 	return true;
 }

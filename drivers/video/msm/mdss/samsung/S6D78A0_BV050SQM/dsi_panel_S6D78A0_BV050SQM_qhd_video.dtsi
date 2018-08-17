@@ -23,7 +23,7 @@
 		qcom,mdss-dsi-panel-height = <960>;
 		qcom,mdss-dsi-bpp = <24>;
 		qcom,mdss-dsi-panel-destination = "display_1";
-		qcom,mdss-dsi-panel-timings = [87 1C 12 00 40 44 16 1E 17 03 04 00];
+		qcom,mdss-dsi-panel-timings = [87 1E 12 00 42 44 18 22 17 03 04 00];
 		qcom,mdss-dsi-on-command = [
 			/* Initializing Sequence(1)*/
 			39 00 00 00 00 00 03 F0 5A 5A
@@ -39,7 +39,7 @@
 			39 00 00 00 00 00 12 F4 01 10 32 00 24 26 28 27 27 27 B7 2B 2C 65 6A 34 20
 			39 00 00 00 00 00 15 EF 01 01 81 22 83 04 05 00 00 00 28 81 00 21 21 03 03 40 00 10
 			39 00 00 00 00 00 09 F2 19 04 08 08 08 3F 23 00
-			39 00 00 00 00 00 07 F6 63 23 15 00 00 06
+			39 00 00 00 00 00 07 F6 63 27 15 00 00 06
 			39 00 00 00 00 00 07 E1 01 FF 01 1B 20 17
 			39 00 00 00 00 00 04 E2 ED C7 23
 			39 00 00 00 00 00 27 F7 01 01 01 0A 0B 00 1A 05 1B 01 01 01 01 01 01 01 01 01 01 01 01 01 08 09 00 1A 04 1B 01 01 01 01 01 01 01 01 01 01
@@ -48,8 +48,8 @@
 			/* Gamma Setting Sequence*/
 
 			
-			39 00 00 00 00 00 28 FA 11 3B 33 2A 1A 09 08 04 03 07 05 06 17 12 3B 33 2A 1D 0B 07 04 03 07 05 07 17 10 3B 33 2A 1A 07 05 02 02 05 03 04 15
-			39 00 00 00 00 00 28 FB 11 3B 33 2A 1A 0A 08 04 03 06 05 06 17 12 3B 33 2A 1D 0B 07 04 03 07 05 07 17 10 3B 33 2A 1A 08 05 02 02 05 03 04 14
+			39 00 00 00 00 00 0E FA 00 3F 3E 32 21 14 16 14 10 10 06 03 06
+			39 00 00 00 00 00 0E FB 00 3F 3E 32 21 16 16 14 10 10 06 03 06
 
 			/* R29h and delay of 20ms*/
 			05 01 00 00 14 00 02 29 00
@@ -57,7 +57,7 @@
 			/* Initializing Sequence(2) */
 			39 00 00 00 00 00 03 F0 A5 A5
 			39 00 00 00 00 00 03 F1 A5 A5
-			39 00 00 00 00 00 03 FC 5A 5A
+			39 01 00 00 00 00 03 FC 5A 5A
 		];
 		qcom,mdss-dsi-off-command = [
 			05 01 00 00 32 00 02 28 00	/*  wait 50ms */
@@ -80,8 +80,8 @@
 		qcom,mdss-dsi-border-color = <0>;
 		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_ss_pwm";
 		qcom,mdss-dsi-bl-min-level = <1>;
-		qcom,mdss-dsi-bl-max-level = <255>;
-		qcom,mdss-brightness-max-level = <255>;
+		qcom,mdss-dsi-bl-max-level = <256>;
+		qcom,mdss-brightness-max-level = <256>;
 		qcom,mdss-dsi-panel-type = "dsi_video_mode";
 		qcom,mdss-dsi-h-sync-pulse = <0>;
 		//qcom,mdss-dsi-hfp-power-mode;
@@ -100,7 +100,7 @@
 		qcom,mdss-dsi-dma-trigger = "trigger_sw";
 		qcom,mdss-dsi-panel-framerate = <60>;
 		qcom,mdss-dsi-panel-clockrate = <460000000>;
-		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+		qcom,mdss-dsi-on-command-state = "dsi_hs_mode";
 		qcom,mdss-dsi-off-command-state = "dsi_hs_mode";
 		qcom,mdss-pan-physical-width-dimension = <64>;
 		qcom,mdss-pan-physical-height-dimension = <110>;
@@ -121,6 +121,7 @@
  		samsung,panel-vendor = "BOE";
 		samsung,tft-common-support;
 		samsung,panel-backlight-tft-gpio1 = <&tlmm 94 GPIOF_OUT_INIT_HIGH>;
+		samsung,panel-backlight-tft-gpio2 = <&tlmm 44 GPIOF_OUT_INIT_HIGH>;
 
 		/* To use device_resume & device_suspend for optimizing display on time */
 		samsung,reduce_display_on_time;
@@ -131,16 +132,16 @@
 		samsung,display_off_tx_cmds_revA = [05 01 00 00 32 00 02 28 00];
 
 		samsung,level1_key_enable_tx_cmds_revA = [
-			39 00 00 00 00 00 03 F0 5A 5A
+			39 01 00 00 00 00 03 F0 5A 5A
 		];
 		samsung,level1_key_disable_tx_cmds_revA = [
-			39 00 00 00 00 00 03 F0 A5 A5
+			39 01 00 00 00 00 03 F0 A5 A5
 		];
 		samsung,level2_key_enable_tx_cmds_revA = [
-			39 00 00 00 00 00 03 FC A5 A5
+			39 01 00 00 00 00 03 F1 5A 5A
 		];
 		samsung,level2_key_disable_tx_cmds_revA = [
-			39 00 00 00 00 00 03 FC 5A 5A
+			39 01 00 00 00 00 03 F1 A5 A5
 		];
 
 		/*
@@ -164,36 +165,33 @@
 		samsung,scaled_level_map_table_revA = <
 		/* <idx>	    <from>       <till>     <scaled_level> */
 			0		0		0		0
-			1		1		7		32
-			2		8		13		31
-			3		14		19		30
-			4		20		25		29
-			5		26		31		28
-			6		32		37		27
-			7		38		43		26
-			8		44		49		25
-			9		50		56		24
-			10		57		64		23
-			11		65		72		22
-			12		73		80		21
-			13		81		88		20
-			14		89		96		19
-			15		97		105		18
-			16		106		114		17
-			17		115		123		16
-			18		124		133		15
-			19		134		143		14
-			20		144		153		13
-			21		154		163		12
-			22		164		173		11
-			23		174		183		10
-			24		184		193		9
-			25		194		203		8
-			26		204		213		7
-			27		214		223		6
-			28		224		233		5
-			29		234		243		4
-			30		244		255		3
+			1		1		5		31
+			2		6		14		30
+			3		15		24		29
+			4		25		34		28
+			5		35		44		27
+			6		45		54		26
+			7		55		64		25
+			8		65		74		24
+			9		75		84		23
+			10		85		94		22
+			11		95		104		21
+			12		105		114		20
+			13		115		124		19
+			14		125		134		18
+			15		135		144		17
+			16		145		154		16
+			17		155		164		15
+			18		165		174		14
+			19		175		184		13
+			20		185		194		12
+			21		195		204		11
+			22		205		214		10
+			23		215		224		9
+			24		225		234		8
+			25		235		244		7
+			26		245		255		6
+			27		256		256		1
 			>;
 	};
 };

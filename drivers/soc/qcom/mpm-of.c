@@ -608,8 +608,13 @@ void msm_mpm_exit_sleep(bool from_idle)
 			unsigned int apps_irq = msm_mpm_get_irq_m2a(mpm_irq);
 			struct irq_desc *desc = apps_irq ?
 				irq_to_desc(apps_irq) : NULL;
+			struct irq_chip *chip = NULL;
 
-			if (desc && !irqd_is_level_type(&desc->irq_data)) {
+			if (desc)
+				chip = desc->irq_data.chip;
+
+			if (desc && !irqd_is_level_type(&desc->irq_data) &&
+				(!(chip && !strcmp(chip->name, "msmgpio")))) {
 				irq_set_pending(apps_irq);
 				if (from_idle) {
 					raw_spin_lock(&desc->lock);

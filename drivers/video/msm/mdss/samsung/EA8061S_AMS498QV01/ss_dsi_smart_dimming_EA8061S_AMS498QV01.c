@@ -34,8 +34,7 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
 /*#define SMART_DIMMING_DEBUG*/
 
 static char max_lux_table[GAMMA_SET_MAX];
-static char min_lux_table[GAMMA_SET_MAX];
-static int id3;
+
 /*
 *	To support different center cell gamma setting
 */
@@ -1374,20 +1373,17 @@ static int searching_function(long long candela, int *index, int gamma_curve)
 
 	for (cnt = 0; cnt < (GRAY_SCALE_MAX - 1); cnt++) {
 		if (gamma_curve == GAMMA_CURVE_1P9) {
-			delta_1 = candela - curve_1p9_350[cnt];
-			delta_2 = candela - curve_1p9_350[cnt + 1];
-		} else if (gamma_curve == GAMMA_CURVE_2P0) {
-			delta_1 = candela - curve_2p0_350[cnt];
-			delta_2 = candela - curve_2p0_350[cnt + 1];
+			delta_1 = candela - curve_1p9_360[cnt];
+			delta_2 = candela - curve_1p9_360[cnt + 1];
 		} else if (gamma_curve == GAMMA_CURVE_2P15) {
-			delta_1 = candela - curve_2p15_350[cnt];
-			delta_2 = candela - curve_2p15_350[cnt + 1];
+			delta_1 = candela - curve_2p15_360[cnt];
+			delta_2 = candela - curve_2p15_360[cnt + 1];
 		} else if (gamma_curve == GAMMA_CURVE_2P2) {
-			delta_1 = candela - curve_2p2_350[cnt];
-			delta_2 = candela - curve_2p2_350[cnt + 1];
+			delta_1 = candela - curve_2p2_360[cnt];
+			delta_2 = candela - curve_2p2_360[cnt + 1];
 		} else {
-			delta_1 = candela - curve_2p2_350[cnt];
-			delta_2 = candela - curve_2p2_350[cnt + 1];
+			delta_1 = candela - curve_2p2_360[cnt];
+			delta_2 = candela - curve_2p2_360[cnt + 1];
 		}
 
 		if (delta_2 < 0) {
@@ -1428,13 +1424,12 @@ static void(*Make_hexa[TABLE_MAX])(int*, struct SMART_DIM*, int*) = {
 	vt_hexa,
 };
 
-#if defined(AID_OPERATION)
 static int get_base_luminance(struct SMART_DIM *pSmart)
 {
 	int cnt;
 	int base_luminance[LUMINANCE_MAX][2];
 
-	memcpy(base_luminance, base_luminance_revC, sizeof(base_luminance_revC));
+	memcpy(base_luminance, base_luminance_revA, sizeof(base_luminance_revA));
 
 	for (cnt = 0; cnt < LUMINANCE_MAX; cnt++)
 		if (base_luminance[cnt][0] == pSmart->brightness_level)
@@ -1455,7 +1450,7 @@ static int find_cadela_table(int brightness)
 	return err;
 }
 
-static void gamma_init(struct SMART_DIM *pSmart, char *str, int size)
+static void gamma_init_revA(struct SMART_DIM *pSmart, char *str, int size)
 {
 	long long candela_level[TABLE_MAX] = {-1, };
 	int bl_index[TABLE_MAX] = {-1, };
@@ -1477,7 +1472,7 @@ static void gamma_init(struct SMART_DIM *pSmart, char *str, int size)
 	if (bl_level < 0)
 		pr_err("%s : can not find base luminance!!\n", __func__);
 
-	if (pSmart->brightness_level < 350) {
+	if (pSmart->brightness_level < 360) {
 		for (cnt = 0; cnt < TABLE_MAX; cnt++) {
 			point_index = INFLECTION_VOLTAGE_ARRAY[cnt+1];
 			temp_cal_data =	((long long)(candela_coeff_2p15[point_index])) *((long long)(bl_level));
@@ -1518,12 +1513,12 @@ static void gamma_init(struct SMART_DIM *pSmart, char *str, int size)
 
 		if (table_index == -1) {
 			table_index = CANDELA_MAX_TABLE;
-			pr_err("%s fail candela table_index cnt : %d brightness %d",
+			pr_err("%s fail candela table_index cnt : %d brightness %d\n",
 				__func__, cnt, pSmart->brightness_level);
 		}
 
 		bl_index[TABLE_MAX - cnt] +=
-			gradation_offset_revC[table_index][cnt - 1];
+			gradation_offset_revA[table_index][cnt - 1];
 
 		/* THERE IS M-GRAY0 target */
 		if (bl_index[TABLE_MAX - cnt] == 0)
@@ -1534,11 +1529,11 @@ static void gamma_init(struct SMART_DIM *pSmart, char *str, int size)
 	pr_err("\n bl_index_1:%d  bl_index_3:%d  bl_index_11:%d \n"
 		"bl_index_23:%d bl_index_35:%d	bl_index_51:%d \n"
 		"bl_index_87:%d  bl_index_151:%d bl_index_203:%d \n"
-		"bl_index_255:%d\n",
+		"bl_index_255:%d brightness_level %d \n",
 		bl_index[0], bl_index[1], bl_index[2],
 		bl_index[3], bl_index[4], bl_index[5],
 		bl_index[6], bl_index[7], bl_index[8],
-		bl_index[9]);
+		bl_index[9], pSmart->brightness_level);
 #endif
 	/*Generate Gamma table*/
 	for (cnt = 0; cnt < TABLE_MAX; cnt++)
@@ -1565,13 +1560,13 @@ static void gamma_init(struct SMART_DIM *pSmart, char *str, int size)
 		if (cnt < 3) {
 			level_V255 = gamma_setting[cnt * 2] << 8 | gamma_setting[(cnt * 2) + 1];
 			level_V255 +=
-				rgb_offset_revC[table_index][cnt];
+				rgb_offset_revA[table_index][cnt];
 			level_255_temp_MSB = level_V255 / 256;
 
 			gamma_setting[cnt * 2] = level_255_temp_MSB & 0xff;
 			gamma_setting[(cnt * 2) + 1] = level_V255 & 0xff;
 		} else {
-			gamma_setting[cnt+3] += rgb_offset_revC[table_index][cnt];
+			gamma_setting[cnt+3] += rgb_offset_revA[table_index][cnt];
 		}
 	}
 
@@ -1581,84 +1576,6 @@ static void gamma_init(struct SMART_DIM *pSmart, char *str, int size)
 	/* To avoid overflow */
 	for (cnt = 0; cnt < GAMMA_SET_MAX; cnt++)
 		str[cnt] = gamma_setting[cnt];
-}
-#endif
-
-static void pure_gamma_init(struct SMART_DIM *pSmart, char *str, int size)
-{
-	long long candela_level[TABLE_MAX] = {-1, };
-	int bl_index[TABLE_MAX] = {-1, };
-	int gamma_setting[GAMMA_SET_MAX];
-
-	long long temp_cal_data = 0;
-	int bl_level, cnt;
-	int point_index;
-
-	bl_level = pSmart->brightness_level;
-
-	for (cnt = 0; cnt < TABLE_MAX; cnt++) {
-		point_index = INFLECTION_VOLTAGE_ARRAY[cnt+1];
-		temp_cal_data =
-		((long long)(candela_coeff_2p2[point_index])) *
-		((long long)(bl_level));
-		candela_level[cnt] = temp_cal_data;
-	}
-
-#ifdef SMART_DIMMING_DEBUG
-	pr_info("candela_1:%llu  candela_3:%llu  candela_11:%llu \n"
-		"candela_23:%llu  candela_35:%llu  candela_51:%llu \n"
-		"candela_87:%llu  candela_151:%llu  candela_203:%llu \n"
-		"candela_255:%llu brightness_level %d \n",
-		candela_level[0], candela_level[1], candela_level[2],
-		candela_level[3], candela_level[4], candela_level[5],
-		candela_level[6], candela_level[7], candela_level[8],
-		candela_level[9], pSmart->brightness_level);
-#endif
-
-	/*calculate brightness level*/
-	for (cnt = 0; cnt < TABLE_MAX; cnt++) {
-		if (searching_function(candela_level[cnt],
-			&(bl_index[cnt]), GAMMA_CURVE_2P2)) {
-			pr_info("%s searching functioin error cnt:%d\n",
-				__func__, cnt);
-		}
-	}
-
-#ifdef SMART_DIMMING_DEBUG
-	pr_info("bl_index_1:%d  bl_index_3:%d  bl_index_11:%d \n"
-		"bl_index_23:%d bl_index_35:%d  bl_index_51:%d \n"
-		"bl_index_87:%d  bl_index_151:%d bl_index_203:%d \n"
-		"bl_index_255:%d brightness_level %d \n",
-		bl_index[0], bl_index[1], bl_index[2],
-		bl_index[3], bl_index[4], bl_index[5],
-		bl_index[6], bl_index[7], bl_index[8],
-		bl_index[9], pSmart->brightness_level);
-#endif
-
-	/*Generate Gamma table*/
-	for (cnt = 0; cnt < TABLE_MAX; cnt++)
-		(void)Make_hexa[cnt](bl_index , pSmart, gamma_setting);
-
-	/* To avoid overflow */
-	for (cnt = 0; cnt < GAMMA_SET_MAX; cnt++)
-		gamma_setting[cnt] = str[cnt];
-
-	mtp_offset_substraction(pSmart, gamma_setting);
-
-	/* To avoid overflow */
-	for (cnt = 0; cnt < GAMMA_SET_MAX; cnt++)
-		str[cnt] = gamma_setting[cnt];
-}
-
-static void set_min_lux_table(struct SMART_DIM *psmart)
-{
-	psmart->brightness_level = MIN_CANDELA;
-	pure_gamma_init(psmart, min_lux_table, GAMMA_SET_MAX);
-}
-
-static void get_min_lux_table(char *str, int size)
-{
-	memcpy(str, min_lux_table, size);
 }
 
 static void generate_gamma(struct SMART_DIM *psmart, char *str, int size)
@@ -1684,7 +1601,7 @@ static void generate_gamma(struct SMART_DIM *psmart, char *str, int size)
 
 #ifdef SMART_DIMMING_DEBUG
 	if (lux_loop != psmart->lux_table_max)
-		pr_err("%s searching ok index : %d lux : %d", __func__,
+		pr_err("%s searching ok index : %d lux : %d\n", __func__,
 			lux_loop, ptable[lux_loop].lux);
 #endif
 }
@@ -1761,20 +1678,25 @@ static void mtp_sorting(struct SMART_DIM *psmart)
 static int smart_dimming_init(struct SMART_DIM *psmart)
 {
 	int lux_loop;
+	int id1, id2, id3;
 #ifdef SMART_DIMMING_DEBUG
 	int cnt;
 	char pBuffer[256];
 	memset(pBuffer, 0x00, 256);
 #endif
+	id1 = (psmart->ldi_revision & 0x00FF0000) >> 16;
+	id2 = (psmart->ldi_revision & 0x0000FF00) >> 8;
+	id3 = psmart->ldi_revision & 0xFF;
+
 	pr_debug("%s : ++\n",__func__);
 
 	mtp_sorting(psmart);
 	gamma_cell_determine(psmart->ldi_revision);
-	id3 = psmart->ldi_revision & 0x0F; /* We need only last 4 bits to identify the panel Revision */
+
 #ifdef SMART_DIMMING_DEBUG
 	print_RGB_offset(psmart);
 #endif
-	psmart->vregout_voltage = VREG0_REF_5P4;
+	psmart->vregout_voltage = VREG0_REF_5P7;
 
 	v255_adjustment(psmart);
 	vt_adjustment(psmart);
@@ -1799,20 +1721,14 @@ static int smart_dimming_init(struct SMART_DIM *psmart)
 		/* To make lux table index*/
 		psmart->gen_table[lux_loop].lux = psmart->plux_table[lux_loop];
 
-#if defined(AID_OPERATION)
-		gamma_init(psmart,
-			(char *)(&(psmart->gen_table[lux_loop].gamma_setting)),
+		gamma_init_revA(psmart,
+				(char *)(&(psmart->gen_table[lux_loop].gamma_setting)),
 				GAMMA_SET_MAX);
-#else
-		pure_gamma_init(psmart,
-			(char *)(&(psmart->gen_table[lux_loop].gamma_setting)),
-			GAMMA_SET_MAX);
-#endif
-	}
+		}
 
 	/* set 300CD max gamma table */
-	memcpy(&(psmart->gen_table[lux_loop-1].gamma_setting),	max_lux_table, GAMMA_SET_MAX);
-	set_min_lux_table(psmart);
+	memcpy(&(psmart->gen_table[lux_loop-1].gamma_setting),
+			max_lux_table, GAMMA_SET_MAX);
 
 #ifdef SMART_DIMMING_DEBUG
 	for (lux_loop = 0; lux_loop < psmart->lux_table_max; lux_loop++) {
@@ -1892,7 +1808,7 @@ struct smartdim_conf *smart_get_conf_EA8061S_AMS498QV01(void)
 	smartdim_conf->psmart = smart;
 	smartdim_conf->generate_gamma = wrap_generate_gamma;
 	smartdim_conf->init = wrap_smart_dimming_init;
-	smartdim_conf->get_min_lux_table = get_min_lux_table;
+	smartdim_conf->get_min_lux_table = NULL;
 	smartdim_conf->mtp_buffer = (char *)(&smart->MTP_ORIGN);
 	smartdim_conf->print_aid_log = print_aid_log;
 

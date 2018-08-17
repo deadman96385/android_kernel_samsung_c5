@@ -559,6 +559,7 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 #if !defined(CONFIG_SEC_C7PROLTE_CHN) && !defined(CONFIG_SEC_C7PROLTE_SWA) && !defined(CONFIG_SEC_C5PROLTE_CHN)
 		uint16_t orig_addr_type = 0, read_addr_type = 0;
 #endif
+
 		if (s_ctrl->is_csid_tg_mode)
 			goto DONE;
 
@@ -576,6 +577,7 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 #if !defined(CONFIG_SEC_C7PROLTE_CHN) && !defined(CONFIG_SEC_C7PROLTE_SWA) && !defined(CONFIG_SEC_C5PROLTE_CHN)
 		read_addr_type = read_config.addr_type;
 #endif
+
 		CDBG("%s:CFG_SLAVE_READ_I2C:", __func__);
 		CDBG("%s:slave_addr=0x%x reg_addr=0x%x, data_type=%d\n",
 			__func__, read_config.slave_addr,
@@ -598,10 +600,12 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		CDBG("%s:orig_slave_addr=0x%x, new_slave_addr=0x%x",
 				__func__, orig_slave_addr,
 				read_slave_addr >> 1);
+
 #if !defined(CONFIG_SEC_C7PROLTE_CHN) && !defined(CONFIG_SEC_C7PROLTE_SWA) && !defined(CONFIG_SEC_C5PROLTE_CHN)
 		orig_addr_type = s_ctrl->sensor_i2c_client->addr_type;
 		s_ctrl->sensor_i2c_client->addr_type = read_addr_type;
 #endif
+
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_read(
 				s_ctrl->sensor_i2c_client,
 				read_config.reg_addr,
@@ -619,6 +623,7 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		pr_debug("slave_read %x %x %x\n", read_slave_addr,
 			read_config.reg_addr, local_data);
 #endif
+
 		if (rc < 0) {
 			pr_err("%s:%d: i2c_read failed\n", __func__, __LINE__);
 			break;
@@ -898,6 +903,36 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 					}
 					break;
 
+#if defined(CONFIG_SAMSUNG_MULTI_CAMERA)
+				case AUX_CAMERA_B:
+					if (!msm_is_sec_get_rear2_hw_param(&hw_param)) {
+						if (hw_param != NULL) {
+							CDBG("[HWB_DBG][R2][INIT] Init\n");
+							hw_param->i2c_chk = FALSE;
+							hw_param->mipi_chk = FALSE;
+							hw_param->need_update_to_file = FALSE;
+
+							msm_is_sec_get_sensor_comp_mode(&hw_cam_sensor_clk_size);
+							switch(*hw_cam_sensor_clk_size){
+								case CAM_HW_PARM_CLK_CNT:
+									CDBG("[HWB_DBG][R2][INIT] NON_CC\n");
+									hw_param->comp_chk = FALSE;
+									break;
+
+								case CAM_HW_PARM_CC_CLK_CNT:
+									CDBG("[HWB_DBG][R2][INIT] CC\n");
+									hw_param->comp_chk = TRUE;
+									break;
+
+								default:
+									pr_err("[HWB_DBG][R2][INIT] Unsupport\n");
+									break;
+							}
+						}
+					}
+					break;
+#endif
+
 				default:
 					pr_err("[HWB_DBG][NON][INIT] Unsupport\n");
 					break;
@@ -994,6 +1029,25 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 						}
 					}
 					break;
+
+#if defined(CONFIG_SAMSUNG_MULTI_CAMERA)
+				case AUX_CAMERA_B:
+					if (!msm_is_sec_get_rear2_hw_param(&hw_param)) {
+						if (hw_param != NULL) {
+							hw_param->i2c_chk = FALSE;
+							hw_param->mipi_chk = FALSE;
+							hw_param->comp_chk = FALSE;
+
+							if (hw_param->need_update_to_file) {
+								CDBG("[HWB_DBG][R2][DEINIT] Update\n");
+								msm_is_sec_copy_err_cnt_to_file();
+							}
+
+							hw_param->need_update_to_file = FALSE;
+						}
+					}
+					break;
+#endif
 
 				default:
 					pr_err("[HWB_DBG][NON][DEINIT] Unsupport\n");

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -93,14 +93,10 @@ static v_BOOL_t crda_regulatory_run_time_entry_valid = VOS_FALSE;
 #define MIN(a, b) (a > b ? b : a)
 #define MAX(a, b) (a > b ? a : b)
 
-#if defined(CONFIG_SEC_C7LTE_CHN) || defined(CONFIG_SEC_C7LTE_CHN_HK)
-#define ISC7000 1
-#else
-#define ISC7000 0
+#ifdef SEC_WLAN_USE_OLD_NV
+extern unsigned int system_rev;
 #endif
 
-extern unsigned int system_rev;
-#define WLAN_NV_FILE_WA "wlan/prima/WCNSS_qcom_wlan_nv_wa.bin"
 /*----------------------------------------------------------------------------
  * Type Declarations
  * -------------------------------------------------------------------------*/
@@ -1177,8 +1173,10 @@ VOS_STATUS vos_nv_open(void)
         return (eHAL_STATUS_FAILURE);
     }
 
-	if(ISC7000 == 1 && system_rev <= 3) {
-		status = hdd_request_firmware(WLAN_NV_FILE_WA,
+#ifdef SEC_WLAN_USE_OLD_NV
+    if (CONFIG_WLAN_USE_OLD_NV != 0 && system_rev <= CONFIG_WLAN_USE_OLD_NV)
+	{
+		status = hdd_request_firmware(WLAN_NV_FILE_OLD,
 									  ((VosContextType*)(pVosContext))->pHDDContext,
 									  (v_VOID_t**)&pnvtmpBuf, &nvReadBufSize);
 
@@ -1186,22 +1184,26 @@ VOS_STATUS vos_nv_open(void)
 		{
 		   VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_FATAL,
 					   "%s: unable to download NV file %s",
-					   __func__, WLAN_NV_FILE_WA);
-		   return VOS_STATUS_E_RESOURCES;
-		}
-	} else {
-		status = hdd_request_firmware(WLAN_NV_FILE,
-                                  ((VosContextType*)(pVosContext))->pHDDContext,
-                                  (v_VOID_t**)&pnvtmpBuf, &nvReadBufSize);
-
-		if ((!VOS_IS_STATUS_SUCCESS( status )) || (!pnvtmpBuf))
-		{
-		   VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_FATAL,
-					   "%s: unable to download NV file %s",
-					   __func__, WLAN_NV_FILE);
+					   __func__, WLAN_NV_FILE_OLD);
 		   return VOS_STATUS_E_RESOURCES;
 		}
     }
+	else {
+#endif
+    status = hdd_request_firmware(WLAN_NV_FILE,
+                                  ((VosContextType*)(pVosContext))->pHDDContext,
+                                  (v_VOID_t**)&pnvtmpBuf, &nvReadBufSize);
+
+    if ((!VOS_IS_STATUS_SUCCESS( status )) || (!pnvtmpBuf))
+    {
+       VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_FATAL,
+                   "%s: unable to download NV file %s",
+                   __func__, WLAN_NV_FILE);
+       return VOS_STATUS_E_RESOURCES;
+    }
+#ifdef SEC_WLAN_USE_OLD_NV
+    }	
+#endif
 
     pnvEncodedBuf = (v_U8_t *)vos_mem_vmalloc(nvReadBufSize);
 
@@ -1782,7 +1784,7 @@ VOS_STATUS vos_nv_readMultiMacAddress( v_U8_t *pMacAddress,
       (NULL == pMacAddress))
    {
       VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
-          " Invalid Parameter from NV Client macCount %d, pMacAddress %p",
+          " Invalid Parameter from NV Client macCount %d, pMacAddress %pK",
           macCount, pMacAddress);
    }
 
@@ -2652,6 +2654,39 @@ VOS_STATUS vos_nv_setNVEncodedBuffer(v_U8_t *pNvBuffer, v_SIZE_t size)
             (size-sizeof(v_U32_t)));
 
     return VOS_STATUS_SUCCESS;
+}
+
+/*
+ *vos_nv_set_Channel_state - API to set the channel state in NV table
+ *@rfChannel  - input channel enum
+ *@channel_state - state of the channel to be set
+ *  enabled
+ *  disabled
+ *  DFS
+ * Return - Void
+ */
+void vos_nv_set_channel_state(v_U32_t rfChannel, int channel_state)
+{
+	v_U32_t	channelLoop;
+	eRfChannels channelEnum = INVALID_RF_CHANNEL;
+
+	for (channelLoop = 0; channelLoop <= RF_CHAN_165; channelLoop++) {
+		if (rfChannels[channelLoop].channelNum == rfChannel) {
+			channelEnum = (eRfChannels)channelLoop;
+			break;
+		}
+	}
+
+	if (INVALID_RF_CHANNEL == channelEnum) {
+		VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+			  "vos_nv_set_channel_state, invalid channel %d",
+			  rfChannel);
+		return;
+	}
+
+	pnvEFSTable->
+	halnv.tables.regDomains[temp_reg_domain].channels[channelEnum].enabled =
+		channel_state;
 }
 
 /**------------------------------------------------------------------------
@@ -3708,24 +3743,32 @@ int vos_update_nv_table_from_wiphy_band(void *hdd_ctx,
                 }
             }
             /* nv cannot distinguish between DFS and passive channels */
-            else if (wiphy->bands[i]->channels[j].flags &
+            else if ((wiphy->bands[i]->channels[j].flags &
                     (IEEE80211_CHAN_RADAR | IEEE80211_CHAN_PASSIVE_SCAN |
-                     IEEE80211_CHAN_INDOOR_ONLY))
+                     IEEE80211_CHAN_INDOOR_ONLY )))
             {
-                if (wiphy->bands[i]->channels[j].flags &
-                        IEEE80211_CHAN_INDOOR_ONLY)
+                if (pHddCtx->cfg_ini->indoor_channel_support == false &&
+                    wiphy->bands[i]->channels[j].flags &
+                    IEEE80211_CHAN_INDOOR_ONLY)
                     wiphy->bands[i]->channels[j].flags |=
                         IEEE80211_CHAN_PASSIVE_SCAN;
 #ifdef FEATURE_WLAN_CH144
-                if ((RF_CHAN_144 == k) && (E_NV_V3 != vos_nv_getNvVersion()))
-                {
-                    //Do not enable channel 144 when NV version is not NV3
+                if ((RF_CHAN_144 == k) &&
+                    (E_NV_V3 != vos_nv_getNvVersion())) {
+                        //Do not enable channel 144 when NV version is not NV3
                 }
                 else
 #endif
                 {
-                    pnvEFSTable->halnv.tables.regDomains[temp_reg_domain].\
-                        channels[k].enabled = NV_CHANNEL_DFS;
+                    if ((pHddCtx->cfg_ini->indoor_channel_support == true &&
+                          wiphy->bands[i]->channels[j].flags &
+                          IEEE80211_CHAN_INDOOR_ONLY)) {
+                        pnvEFSTable->halnv.tables.regDomains[temp_reg_domain].\
+                            channels[k].enabled = NV_CHANNEL_ENABLE;
+                    } else {
+                        pnvEFSTable->halnv.tables.regDomains[temp_reg_domain].\
+                            channels[k].enabled = NV_CHANNEL_DFS;
+                    }
                 }
 
                 if (!gnvEFSTable->halnv.tables.regDomains[temp_reg_domain].channels[k].pwrLimit

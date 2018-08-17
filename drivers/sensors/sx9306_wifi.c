@@ -27,22 +27,21 @@
 #include <linux/uaccess.h>
 #include <linux/wakelock.h>
 #include <linux/regulator/consumer.h>
+#include <linux/sensor/sensors_core.h>
+#include "sx9306_wifi_reg.h"
 
-/* for muic notifier */
-#if defined(CONFIG_MUIC_NOTIFIER)
+#if defined(CONFIG_CCIC_NOTIFIER) && defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+#include <linux/ccic/ccic_notifier.h>
+#include <linux/usb/manager/usb_typec_manager_notifier.h>
+#elif defined(CONFIG_MUIC_NOTIFIER)
 #include <linux/muic/muic.h>
 #include <linux/muic/muic_notifier.h>
 #endif
 
-#if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
-/* for ccic notifier */
-#include <linux/ccic/ccic_notifier.h>
-/* for usb ctype notifier */
-#include <linux/usb/manager/usb_typec_manager_notifier.h>
+#ifdef TAG
+#undef TAG
+#define TAG "[GRIP_WIFI]"
 #endif
-
-#include <linux/sensor/sensors_core.h>
-#include "sx9306_wifi_reg.h"
 
 #define VENDOR_NAME              "SEMTECH"
 #define MODEL_NAME               "SX9306_WIFI"
@@ -77,13 +76,11 @@ struct sx9306_p {
 	struct delayed_work debug_work;
 	struct wake_lock grip_wake_lock;
 	struct mutex read_mutex;
-#if defined(CONFIG_MUIC_NOTIFIER)
-	struct notifier_block muic_nb;
-#endif
-#if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+#if defined(CONFIG_CCIC_NOTIFIER) && defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
 	struct notifier_block cpuidle_ccic_nb;
+#elif defined(CONFIG_MUIC_NOTIFIER)
+	struct notifier_block cpuidle_muic_nb;
 #endif
-
 	bool skip_data;
 	bool init_done;
 	u8 channel_main;
@@ -247,7 +244,7 @@ static void sx9306_wifi_initialize_register(struct sx9306_p *data)
 	u8 val = 0;
 	int idx;
 
-	for (idx = 0; idx < (int)(sizeof(setup_reg) >> 1); idx++) {
+	for (idx = 0; idx < (sizeof(setup_reg) >> 1); idx++) {
 		sx9306_wifi_i2c_write(data, setup_reg[idx].reg,
 						setup_reg[idx].val);
 		SENSOR_INFO("Write Reg: 0x%x Value: 0x%x\n",
@@ -468,13 +465,13 @@ static ssize_t sx9306_wifi_register_store(struct device *dev,
 
 	for (idx = 0; idx < (int)(sizeof(setup_reg) >> 1); idx++) {
 		if(setup_reg[idx].reg == regist) {
+			sx9306_wifi_i2c_write(data,
+				(unsigned char)regist, (unsigned char)val);
+			setup_reg[idx].val = val;
+			SENSOR_INFO("Register(0x%4x) data(0x%4x)\n", regist, val);
 			break;
 		}
 	}
-
-	sx9306_wifi_i2c_write(data, (unsigned char)regist, (unsigned char)val);
-	setup_reg[idx].val = val;
-	SENSOR_INFO("Register(0x%4x) data(0x%4x)\n", regist, val);
 
 	return count;
 }
@@ -972,7 +969,7 @@ static void sx9306_wifi_process_interrupt(struct sx9306_p *data)
 		sx9306_wifi_touch_process(data, flag);
 }
 
-#if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+#if defined(CONFIG_CCIC_NOTIFIER) && defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
 static int sx9306_wifi_ccic_handle_notification(struct notifier_block *nb,
 		unsigned long action, void *data)
 {
@@ -982,7 +979,6 @@ static int sx9306_wifi_ccic_handle_notification(struct notifier_block *nb,
 	struct sx9306_p *pdata =
 		container_of(nb, struct sx9306_p, cpuidle_ccic_nb);
 	static int pre_attach;
-	u8 tmp;
 
 	if (pre_attach == usb_status.attach)
 		return 0;
@@ -998,22 +994,13 @@ static int sx9306_wifi_ccic_handle_notification(struct notifier_block *nb,
 		case USB_STATUS_NOTIFY_ATTACH_UFP:
 		case USB_STATUS_NOTIFY_ATTACH_DFP:
 		case USB_STATUS_NOTIFY_DETACH:
-			if(usb_status.attach) {
-				SENSOR_INFO("drp = %d attat = %d\n",
-					usb_status.drp, usb_status.attach);	
-				tmp = pdata->normal_th;
+			if (usb_status.attach)
 				pdata->normal_th = pdata->ta_th;
-				pdata->ta_th = tmp;
-			} else {
-				SENSOR_INFO("drp = %d attat = %d\n",
-					usb_status.drp, usb_status.attach);
-				tmp = pdata->ta_th;
-				pdata->ta_th = pdata->normal_th;
-				pdata->normal_th = tmp;
-			}
+			else
+				pdata->normal_th = pdata->normal_th_buf;
 
 			sx9306_wifi_i2c_write(pdata, SX9306_CPS_CTRL6_REG,
-				pdata->normal_th);	
+				pdata->normal_th);
 			sx9306_wifi_set_offset_calibration(pdata);
 			break;
 		default:
@@ -1023,19 +1010,17 @@ static int sx9306_wifi_ccic_handle_notification(struct notifier_block *nb,
 	}
 
 	pre_attach = usb_status.attach;
+	SENSOR_INFO("drp = %d attat = %d thd = %d\n",
+		usb_status.drp, usb_status.attach, pdata->normal_th);
 
 	return 0;
 }
-#endif
-
-#if defined(CONFIG_MUIC_NOTIFIER)
+#elif defined(CONFIG_MUIC_NOTIFIER)
 static int sx9306_wifi_muic_notifier(struct notifier_block *nb,
 				unsigned long action, void *data)
 {
-	struct sx9306_p *pdata = container_of(nb, struct sx9306_p, muic_nb);
+	struct sx9306_p *pdata = container_of(nb, struct sx9306_p, cpuidle_muic_nb);
 	muic_attached_dev_t attached_dev = *(muic_attached_dev_t *)data;
-
-	u8 tmp;
 	
 	switch (attached_dev) {
 	case ATTACHED_DEV_OTG_MUIC:
@@ -1043,17 +1028,10 @@ static int sx9306_wifi_muic_notifier(struct notifier_block *nb,
 	case ATTACHED_DEV_TA_MUIC:
 	case ATTACHED_DEV_AFC_CHARGER_PREPARE_MUIC:
 	case ATTACHED_DEV_AFC_CHARGER_9V_MUIC:
-		if (action == MUIC_NOTIFY_CMD_ATTACH) {
-			SENSOR_INFO("TA/USB is inserted\n");
-			tmp = pdata->normal_th;
+		if (action == MUIC_NOTIFY_CMD_ATTACH)
 			pdata->normal_th = pdata->ta_th;
-			pdata->ta_th = tmp;
-		} else {
-			SENSOR_INFO("TA/USB is removed\n");
-			tmp = pdata->ta_th;
-			pdata->ta_th = pdata->normal_th;
-			pdata->normal_th = tmp;
-		}
+		else
+			pdata->normal_th = pdata->normal_th_buf;
 
 		if (pdata->init_done == ON)
 			sx9306_wifi_set_offset_calibration(pdata);
@@ -1065,8 +1043,7 @@ static int sx9306_wifi_muic_notifier(struct notifier_block *nb,
 	}
 
 	sx9306_wifi_i2c_write(pdata, SX9306_CPS_CTRL6_REG, pdata->normal_th);
-
-	SENSOR_INFO("dev=%d, action=%lu, thd=%d\n", attached_dev, action, 
+	SENSOR_INFO("dev = %d, action = %lu, thd = %d\n", attached_dev, action, 
 		pdata->normal_th);
 
 	return NOTIFY_DONE;
@@ -1088,17 +1065,14 @@ static void sx9306_wifi_init_work_func(struct work_struct *work)
 
 	/* disabling IRQ */
 	sx9306_wifi_i2c_write(data, SX9306_IRQ_ENABLE_REG, 0x00);
-
-#if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+#if defined(CONFIG_CCIC_NOTIFIER) && defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
 	manager_notifier_register(&data->cpuidle_ccic_nb,
-					sx9306_wifi_ccic_handle_notification,
-					MANAGER_NOTIFY_CCIC_USB);
+				sx9306_wifi_ccic_handle_notification,
+				MANAGER_NOTIFY_CCIC_USB);
+#elif defined(CONFIG_MUIC_NOTIFIER)
+	muic_notifier_register(&data->cpuidle_muic_nb, sx9306_wifi_muic_notifier,
+				MUIC_NOTIFY_DEV_CPUIDLE);
 #endif
-#if defined(CONFIG_MUIC_NOTIFIER)
-	muic_notifier_register(&data->muic_nb, sx9306_wifi_muic_notifier,
-		MUIC_NOTIFY_DEV_CPUIDLE);
-#endif
-
 	sx9306_wifi_set_debug_work(data, ON);
 }
 

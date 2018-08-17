@@ -618,8 +618,7 @@ static int bhy_load_ram_patch(struct bhy_client_data *client_data)
 	}
 
 	/* Upload data */
-	f = filp_open(BHY_DEF_RAM_PATCH_FILE_PATH, O_RDONLY, 0);
-	if (f == NULL || IS_ERR(f)) {
+	f = filp_open(BHY_DEF_RAM_PATCH_FILE_PATH, O_RDONLY, 0);	if (f == NULL || IS_ERR(f)) {
 		mutex_unlock(&client_data->mutex_bus_op);
 		PERR("open file [%s] error\n", BHY_DEF_RAM_PATCH_FILE_PATH);
 		atomic_set(&client_data->reset_flag, RESET_FLAG_ERROR);

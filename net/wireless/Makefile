@@ -19,11 +19,16 @@ CFLAGS_trace.o := -I$(src)
 
 ccflags-y += -D__CHECK_ENDIAN__
 
-ifeq ($(CONFIG_WLAN_SEC_REGULATORY_POLICY),y)
-$(obj)/regdb.c: $(src)/db.txt_old $(src)/genregdb.awk
+ifeq ($(CONFIG_DBTXT_VARIATION),0)
+ifeq ($(shell secgetspf SEC_PRODUCT_FEATURE_WLAN_SUPPORT_MOBILEAP_WIFISHARING_LITE), TRUE)
+$(obj)/regdb.c: $(src)/db.txt_2018 $(src)/genregdb.awk
 	@$(AWK) -f $(srctree)/$(src)/genregdb.awk < $< > $@
 else
 $(obj)/regdb.c: $(src)/db.txt $(src)/genregdb.awk
+	@$(AWK) -f $(srctree)/$(src)/genregdb.awk < $< > $@
+endif
+else
+$(obj)/regdb.c: $(src)/db.txt_$(CONFIG_DBTXT_VARIATION) $(src)/genregdb.awk
 	@$(AWK) -f $(srctree)/$(src)/genregdb.awk < $< > $@
 endif
 

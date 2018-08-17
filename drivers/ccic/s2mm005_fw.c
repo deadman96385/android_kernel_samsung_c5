@@ -4,14 +4,19 @@
 #include <linux/ccic/s2mm005_ext.h>
 #include <linux/ccic/s2mm005_fw.h>
 #include <linux/ccic/ccic_sysfs.h>
-#include <linux/ccic/BOOT_FLASH_FW.h>
-#include <linux/ccic/BOOT_FLASH_FW_BOOT3.h>
-#include <linux/ccic/BOOT_FLASH_FW_BOOT4.h>
 #include <linux/ccic/BOOT_FLASH_FW_BOOT5.h>
 #include <linux/ccic/BOOT_FLASH_FW_BOOT6.h>
+#include <linux/ccic/BOOT_FLASH_FW_BOOT7.h>
+#include <linux/ccic/BOOT_FLASH_FW_0x0D_BOOT8.h>
 #include <linux/ccic/BOOT_SRAM_FW.h>
 
 #define	S2MM005_FIRMWARE_PATH	"usbpd/s2mm005.bin"
+
+#define FW_CHECK_RETRY 5
+#define VALID_FW_BOOT_VERSION(fw_boot) (fw_boot == 0x7 || fw_boot == 0x8)
+#define VALID_FW_MAIN_VERSION(fw_main) \
+	(!((fw_main[0] == 0xff) && (fw_main[1] == 0xff)) \
+ 	&& !((fw_main[0] == 0x00) && (fw_main[1] == 0x00)))
 
 const char *flashmode_to_string(u32 mode)
 {
@@ -156,10 +161,14 @@ static int s2mm005_flash_write(struct s2mm005_data *usbpd_data, unsigned char *f
 	pFlash_FWCS = (uint32_t *)fw_data;
 	fw_hd = (struct s2mm005_fw*)fw_data;
 	size = fw_hd -> size;
-	if (fw_hd -> boot >= 6)
-		sLopCnt = 0x8000/4;
-	else
-		sLopCnt = 0x1000/4;
+	if(fw_hd->boot < 6)
+    	sLopCnt = 0x1000/4;
+ 	else if (fw_hd->boot == 6)
+        sLopCnt = 0x8000/4;
+ 	else if (fw_hd->boot == 7)
+     	sLopCnt = 0x7000/4;
+	else if (fw_hd->boot >= 8)
+		sLopCnt = 0x5000/4;
 
 	/* Flash write */
 	for (LopCnt = sLopCnt; LopCnt < (size/4); LopCnt++) {
@@ -274,55 +283,65 @@ static int s2mm005_flash_write(struct s2mm005_data *usbpd_data, unsigned char *f
 	return 0;
 }
 
+void s2mm005_flash_ready(struct s2mm005_data *usbpd_data)
+{
+	struct i2c_client *i2c = usbpd_data->i2c;
+	u8 W_DATA[5];
+
+	/* FLASH_READY */
+	W_DATA[0] = 0x02;
+	W_DATA[1] = 0x01;
+	W_DATA[2] = 0x30;
+	W_DATA[3] = 0x50;
+	W_DATA[4] = 0x01;
+	s2mm005_write_byte(i2c, CMD_MODE_0x10, &W_DATA[0], 5);
+}
+
 int s2mm005_flash(struct s2mm005_data *usbpd_data, unsigned int input)
 {
 	struct i2c_client *i2c = usbpd_data->i2c;
 	u8 val, reg;
-	u8 W_DATA[5];
 	int ret = 0;
-	static int retry = 0;
-	uint32_t *pFlash_FW;
-	uint32_t LopCnt, fAddr, fData, fRData;
+	int retry = 0;
 	struct s2mm005_fw *fw_hd;
 	struct file *fp;
 	mm_segment_t old_fs;
 	long fw_size, nread;
 	int irq_gpio_status;
+	FLASH_STATE_Type Flash_DATA;
 
 	switch (input) {
 	case FLASH_MODE_ENTER: { /* enter flash mode */
+		/* FLASH_READY */
+		s2mm005_flash_ready(usbpd_data);
 		do {
-			/* FLASH_READY */
-			W_DATA[0] = 0x02;
-			W_DATA[1] = 0x01;
-			W_DATA[2] = 0x30;
-			W_DATA[3] = 0x50;
-			W_DATA[4] = 0x01;
-			s2mm005_write_byte(i2c, CMD_MODE_0x10, &W_DATA[0], 5);
-
 			/* FLASH_MODE */
 			reg = FLASH_MODE_ENTER_0x10;
 			s2mm005_write_byte(i2c, CMD_MODE_0x10, &reg, 1);
-			usleep_range(10 * 1000, 10 * 1000);
+			usleep_range(50 * 1000, 50 * 1000);
 			/* If irq status is not clear, CCIC can not enter flash mode. */
 			irq_gpio_status = gpio_get_value(usbpd_data->irq_gpio);
 			dev_info(&i2c->dev, "%s IRQ0:%02d\n", __func__, irq_gpio_status);
 			if(!irq_gpio_status) {
 				s2mm005_int_clear(usbpd_data);	// interrupt clear
-				usleep_range(10 * 1000, 10 * 1000);	
+				usleep_range(10*1000, 10*1000);
 			}
 			s2mm005_read_byte_flash(i2c, FLASH_STATUS_0x24, &val, 1);
-			pr_err("flash mode : %s retry %d\n", flashmode_to_string(val), retry);	
-			usleep_range(10 * 1000, 10 * 1000);
+			pr_err("%s %s retry %d\n", __func__, flashmode_to_string(val), retry);
+			usleep_range(50*1000, 50*1000);
+			s2mm005_read_byte(i2c, 0x24, Flash_DATA.BYTE, 4);
+			dev_info(&i2c->dev, "Flash_State:0x%02X   Reserved:0x%06X\n",
+				Flash_DATA.BITS.Flash_State, Flash_DATA.BITS.Reserved);
 
 			retry++;
-			if(retry == 15) {
+			if(retry == 10) {
+			   	 /* RESET */
 				s2mm005_reset(usbpd_data);
 				msleep(3000);
-			} else if (retry == 30) {
+				s2mm005_flash_ready(usbpd_data);
+			} else if (retry == 20) {
 				panic("Flash mode change fail!\n");
 			}
-
 		} while (val != FLASH_MODE_FLASH);
 		break;
 	}
@@ -335,24 +354,24 @@ int s2mm005_flash(struct s2mm005_data *usbpd_data, unsigned int input)
 		pr_err("flash mode : %s\n", flashmode_to_string(val));
 		break;
 	}
-	case FLASH_WRITE: { /* write flash & verify */
-		ret = s2mm005_flash_write(usbpd_data, (unsigned char*)&BOOT_FLASH_FW[0]);
-		break;
-	}
-	case FLASH_WRITE3: { /* write flash & verify */
-		ret = s2mm005_flash_write(usbpd_data, (unsigned char*)&BOOT_FLASH_FW_BOOT3[0]);
-		break;
-	}
-	case FLASH_WRITE4: { /* write flash & verify */
-		ret = s2mm005_flash_write(usbpd_data, (unsigned char*)&BOOT_FLASH_FW_BOOT4[0]);
-		break;
-	}
 	case FLASH_WRITE5: { /* write flash & verify */
 		ret = s2mm005_flash_write(usbpd_data, (unsigned char*)&BOOT_FLASH_FW_BOOT5[0]);
 		break;
 	}
 	case FLASH_WRITE6: { /* write flash & verify */
 		ret = s2mm005_flash_write(usbpd_data, (unsigned char*)&BOOT_FLASH_FW_BOOT6[0]);
+		break;
+	}
+	case FLASH_WRITE7: { /* write flash & verify */
+		ret = s2mm005_flash_write(usbpd_data, (unsigned char*)&BOOT_FLASH_FW_BOOT7[0]);
+		break;
+	}
+	case FLASH_WRITE8: { /* write flash & verify */
+		switch (usbpd_data->s2mm005_fw_product_id) {
+		case PRODUCT_NUM_GTA2XL:
+			ret = s2mm005_flash_write(usbpd_data, (unsigned char *)&BOOT_FLASH_FW_0x0D_BOOT8[0]);
+			break;
+		}
 		break;
 	}
 	case FLASH_WRITE_UMS: {
@@ -362,7 +381,6 @@ int s2mm005_flash(struct s2mm005_data *usbpd_data, unsigned int input)
 		if (IS_ERR(fp)) {
 			pr_err("%s: failed to open %s.\n", __func__,
 				      CCIC_DEFAULT_UMS_FW);
-			ret = -ENOENT;
 			set_fs(old_fs);
 			return ret;
 		}
@@ -396,38 +414,6 @@ int s2mm005_flash(struct s2mm005_data *usbpd_data, unsigned int input)
 		set_fs(old_fs);
 		break;
 	}
-	case FLASH_SRAM: { /* write flash & verify */
-		fw_hd = (struct s2mm005_fw*)&BOOT_FLASH_FW_BOOT4;
-		reg = FLASH_WRITE_0x42;
-		s2mm005_write_byte(i2c, CMD_MODE_0x10, &reg, 1);
-		reg = FLASH_WRITING_BYTE_SIZE_0x4;
-		s2mm005_write_byte(i2c, CMD_HOST_0x11, &reg, 1);
-		s2mm005_read_byte_flash(i2c, FLASH_STATUS_0x24, &val, 1);
-
-		pFlash_FW = (uint32_t *)&BOOT_FLASH_FW_BOOT4[0];
-		fAddr = 0x00000000;
-		for ((LopCnt = 0); LopCnt < (fw_hd->size/4); LopCnt++) {
-			fAddr = LopCnt*4;
-			fData = pFlash_FW[LopCnt];
-			s2mm005_write_flash(i2c, fAddr, fData);
-			s2mm005_verify_flash(i2c, fAddr, &fRData);
-			if (fData != fRData) {
-				pr_err("Verify Error Address = 0x%08X    WData = 0x%08X    VData = 0x%08X\n", fAddr, fData, fRData);
-				return -EFLASH_VERIFY;
-			}
-		}
-		if (LopCnt >= (fw_hd->size/4)) {
-			fAddr = 0xeFFC;
-			fData = 0x1;
-			s2mm005_write_flash(i2c, fAddr, fData);
-			s2mm005_verify_flash(i2c, fAddr, &fRData);
-			if (fData != fRData) {
-				pr_err("Verify Error Address = 0x%08X    WData = 0x%08X    VData = 0x%08X\n", fAddr, fData, fRData);
-				return -EFLASH_VERIFY;
-			}
-		}
-		break;
-	}
 	case FLASH_MODE_EXIT: { /* exit flash mode */
 		reg = FLASH_MODE_EXIT_0x20;
 		s2mm005_write_byte(i2c, CMD_MODE_0x10, &reg, 1);
@@ -444,10 +430,10 @@ int s2mm005_flash(struct s2mm005_data *usbpd_data, unsigned int input)
 	return ret;
 }
 
-void s2mm005_get_fw_version(struct s2mm005_version *version, u8 boot_version, u32 hw_rev)
+void s2mm005_get_fw_version(int product_id,
+	struct s2mm005_version *version, u8 boot_version, u32 hw_rev)
 {
 	struct s2mm005_fw *fw_hd;
-	pr_err("%s: boot_version 0x%x,hw_rev 0x%x\n",__func__, boot_version, hw_rev);
 	switch (boot_version) {
 	case 5:
 		fw_hd = (struct s2mm005_fw*) BOOT_FLASH_FW_BOOT5;
@@ -455,10 +441,18 @@ void s2mm005_get_fw_version(struct s2mm005_version *version, u8 boot_version, u3
 	case 6:
 		fw_hd = (struct s2mm005_fw*) BOOT_FLASH_FW_BOOT6;
 		break;
-	default:
-		fw_hd = (struct s2mm005_fw*) BOOT_FLASH_FW_BOOT5;
+	case 7:
+		fw_hd = (struct s2mm005_fw*) BOOT_FLASH_FW_BOOT7;
+		break;
+	case 8:
+		switch (product_id) {
+		case PRODUCT_NUM_GTA2XL:
+			fw_hd = (struct s2mm005_fw *) BOOT_FLASH_FW_0x0D_BOOT8;
+			break;
+		}
 		break;
 	}
+
 	version->boot = fw_hd->boot;
 	version->main[0] = fw_hd->main[0];
 	version->main[1] = fw_hd->main[1];
@@ -472,15 +466,27 @@ void s2mm005_get_chip_hwversion(struct s2mm005_data *usbpd_data,
 
 	s2mm005_read_byte_flash(i2c, 0x0, (u8 *)&version->boot, 1);
 	s2mm005_read_byte_flash(i2c, 0x1, (u8 *)&version->main, 3);
+	s2mm005_read_byte_flash(i2c, 0x4, (u8 *)&version->ver2, 4);
 }
 
 void s2mm005_get_chip_swversion(struct s2mm005_data *usbpd_data,
 			     struct s2mm005_version *version)
 {
 	struct i2c_client *i2c = usbpd_data->i2c;
+	int i;
 
-	s2mm005_read_byte_flash(i2c, 0x8, (u8 *)&version->boot, 1);
-	s2mm005_read_byte_flash(i2c, 0x9, (u8 *)&version->main, 3);
+	for(i=0; i < FW_CHECK_RETRY; i++) {
+		s2mm005_read_byte_flash(i2c, 0x8, (u8 *)&version->boot, 1);
+		if(VALID_FW_BOOT_VERSION(version->boot))
+			break;
+	}
+	for(i=0; i < FW_CHECK_RETRY; i++) {
+		s2mm005_read_byte_flash(i2c, 0x9, (u8 *)&version->main, 3);
+		if(VALID_FW_MAIN_VERSION(version->main))
+			break;
+	}
+	for(i=0; i < FW_CHECK_RETRY; i++)
+		s2mm005_read_byte_flash(i2c, 0xc, (u8 *)&version->ver2, 4);
 }
 
 int s2mm005_check_version(struct s2mm005_version *version1,
@@ -498,19 +504,21 @@ int s2mm005_check_version(struct s2mm005_version *version1,
 
 int s2mm005_flash_fw(struct s2mm005_data *usbpd_data, unsigned int input)
 {
-	struct i2c_client *i2c = usbpd_data->i2c;
 	int ret = 0;
 	u8 val = 0;
-	u8 check[4];
-	struct device *i2c_dev = i2c->dev.parent->parent;
-	struct pinctrl *i2c_pinctrl;
 
+	if( usbpd_data->fw_product_id != usbpd_data->s2mm005_fw_product_id)
+	{
+		pr_err("FW_UPDATE fail, product number is different (%d)(%d) \n",  usbpd_data->fw_product_id,usbpd_data->s2mm005_fw_product_id);
+		return 0;
+	}
+	
 	pr_err("FW_UPDATE %d\n", input);
 	switch (input) {
-	case FLASH_WRITE3:
-	case FLASH_WRITE4:
 	case FLASH_WRITE5:
 	case FLASH_WRITE6:
+	case FLASH_WRITE7:
+	case FLASH_WRITE8:
 	case FLASH_WRITE: {
 		s2mm005_flash(usbpd_data, FLASH_MODE_ENTER);
 		usleep_range(10 * 1000, 10 * 1000);
@@ -518,7 +526,7 @@ int s2mm005_flash_fw(struct s2mm005_data *usbpd_data, unsigned int input)
 		msleep(200);
 		ret = s2mm005_flash(usbpd_data, input);
 		if (ret < 0)
-			panic("infinite write fail!\n");
+			return ret;	
 		usleep_range(10 * 1000, 10 * 1000);
 		s2mm005_flash(usbpd_data, FLASH_MODE_EXIT);
 		usleep_range(10 * 1000, 10 * 1000);
@@ -548,45 +556,6 @@ int s2mm005_flash_fw(struct s2mm005_data *usbpd_data, unsigned int input)
 		usleep_range(10 * 1000, 10 * 1000);
 		s2mm005_manual_LPM(usbpd_data, 0x6); // LP On
 		enable_irq(usbpd_data->irq);
-		break;
-	}
-	case FLASH_SRAM: {
-		s2mm005_system_reset(usbpd_data);
-		s2mm005_reset_enable(usbpd_data);
-		s2mm005_sram_reset(usbpd_data);
-		i2c_pinctrl = devm_pinctrl_get_select(i2c_dev, "om_high");
-		if (IS_ERR(i2c_pinctrl))
-			pr_err("could not set om high pins\n");
-		s2mm005_hard_reset(usbpd_data);
-		s2mm005_sram_write(i2c);
-		usleep_range(1 * 1000, 1 * 1000);
-
-		check[0] = 0x02;
-		check[1] = 0x40; /* long read */
-		check[2] = 0x00;
-		check[3] = 0x20;
-		s2mm005_write_byte(i2c, 0x10, &check[0], 4);
-		s2mm005_read_byte_flash(i2c, 0x14, &check[0], 4);
-		pr_err("%s sram write size:%2x,%2x,%2x,%2x\n",__func__,check[3],check[2],check[1],check[0]);
-
-		ret = s2mm005_read_byte_flash(i2c, 0xC, &check[0], 4);
-		pr_err("%s sram check :%2x,%2x,%2x,%2x\n",__func__,check[3],check[2],check[1],check[0]);
-
-
-		s2mm005_flash(usbpd_data, FLASH_MODE_ENTER);
-		usleep_range(10 * 1000, 10 * 1000);
-		s2mm005_flash(usbpd_data, FLASH_ERASE);
-		ret = s2mm005_flash(usbpd_data, input);
-		if (ret < 0)
-			panic("infinite write fail!\n");
-		usleep_range(10 * 1000, 10 * 1000);
-		s2mm005_flash(usbpd_data, FLASH_MODE_EXIT);
-
-		i2c_pinctrl = devm_pinctrl_get_select(i2c_dev, "om_input");
-		if (IS_ERR(i2c_pinctrl))
-			pr_err("could not set reset pins\n");
-		s2mm005_hard_reset(usbpd_data);
-		usleep_range(10 * 1000, 10 * 1000);
 		break;
 	}
 	default: {

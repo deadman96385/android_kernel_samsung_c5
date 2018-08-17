@@ -97,7 +97,7 @@ int get_switch_sel(void)
  * 0x31: Disabled
  * 0x30: Enabled
  */
-static int afc_mode = 0;
+static int afc_mode;
 static int __init set_afc_mode(char *str)
 {
 	int mode;
@@ -246,14 +246,11 @@ static int muic_handle_dock_notification(struct notifier_block *nb,
 #ifdef CONFIG_UART3	//XO Shutdown
 	case ATTACHED_DEV_JIG_UART_OFF_MUIC:
 	case ATTACHED_DEV_JIG_UART_OFF_VB_MUIC:
-	case ATTACHED_DEV_JIG_UART_ON_MUIC:
-	case ATTACHED_DEV_JIG_UART_ON_VB_MUIC:
 		/* write value at "sys/class/switch/uart3/state" */
-		if (action == MUIC_NOTIFY_CMD_ATTACH || action == MUIC_NOTIFY_CMD_DETACH) {
+		if (action == MUIC_NOTIFY_CMD_ATTACH)
 			switch_set_state(&switch_uart3, action);
-			printk(KERN_DEBUG "[muic] %s: set %ld to sys/class/switch/uart3/state\n", __func__, action);
-			return NOTIFY_OK;
-		}
+		else if(action == MUIC_NOTIFY_CMD_DETACH)
+			switch_set_state(&switch_uart3, action);
 		break;
 #endif
 	case ATTACHED_DEV_SMARTDOCK_MUIC:
@@ -489,7 +486,7 @@ bool is_muic_usb_path_cp_usb(void)
 	return false;
 }
 
-static int muic_init_gpio_cb(void)
+static int muic_init_gpio_cb(int switch_sel)
 {
 	struct muic_platform_data *pdata = &muic_pdata;
 	const char *usb_mode;

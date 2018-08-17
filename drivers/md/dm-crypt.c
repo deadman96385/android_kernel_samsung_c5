@@ -1119,6 +1119,9 @@ static void clone_init(struct dm_crypt_io *io, struct bio *clone)
 	clone->bi_end_io  = crypt_endio;
 	clone->bi_bdev    = cc->dev->bdev;
 	clone->bi_rw      = io->base_bio->bi_rw;
+#ifdef CONFIG_JOURNAL_DATA_TAG
+	clone->bi_flags   |= io->base_bio->bi_flags & BIO_JOURNAL_TAG_MASK;
+#endif
 }
 
 static int kcryptd_io_read(struct dm_crypt_io *io, gfp_t gfp)
@@ -1248,11 +1251,6 @@ static void kcryptd_crypt_write_io_submit(struct dm_crypt_io *io, int async)
 	BUG_ON(io->ctx.iter_out.bi_size);
 
 	clone->bi_iter.bi_sector = cc->start + io->sector;
-
-	if (likely(!async) && test_bit(DM_CRYPT_NO_OFFLOAD, &cc->flags)) {
-		generic_make_request(clone);
-		return;
-	}
 
 	spin_lock_irqsave(&cc->write_thread_wait.lock, flags);
 	rbp = &cc->write_tree.rb_node;
@@ -1432,7 +1430,7 @@ static int crypt_alloc_tfms(struct crypt_config *cc, char *ciphermode)
 	unsigned i;
 	int err;
 
-	cc->tfms = kmalloc(cc->tfms_count * sizeof(struct crypto_ablkcipher *),
+	cc->tfms = kzalloc(cc->tfms_count * sizeof(struct crypto_ablkcipher *),
 			   GFP_KERNEL);
 	if (!cc->tfms)
 		return -ENOMEM;
@@ -1481,12 +1479,15 @@ static int crypt_set_key(struct crypt_config *cc, char *key)
 	if (!cc->key_size && strcmp(key, "-"))
 		goto out;
 
+	/* clear the flag since following operations may invalidate previously valid key */
+	clear_bit(DM_CRYPT_KEY_VALID, &cc->flags);
+
 	if (cc->key_size && crypt_decode_key(cc->key, key, cc->key_size) < 0)
 		goto out;
 
-	set_bit(DM_CRYPT_KEY_VALID, &cc->flags);
-
 	r = crypt_setkey_allcpus(cc);
+	if (!r)
+		set_bit(DM_CRYPT_KEY_VALID, &cc->flags);
 
 out:
 	/* Hex key string not needed after here, so wipe it. */
@@ -1850,11 +1851,10 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto bad;
 	}
 
-	if (test_bit(DM_CRYPT_SAME_CPU, &cc->flags))
-		cc->crypt_queue = alloc_workqueue("kcryptd", WQ_HIGHPRI | WQ_MEM_RECLAIM, 1);
-	else
-		cc->crypt_queue = alloc_workqueue("kcryptd", WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND,
-						  num_online_cpus());
+	cc->crypt_queue = alloc_workqueue("kcryptd",
+					  WQ_HIGHPRI |
+					  WQ_MEM_RECLAIM |
+					  WQ_UNBOUND, num_online_cpus());
 	if (!cc->crypt_queue) {
 		ti->error = "Couldn't create kcryptd queue";
 		goto bad;
@@ -1899,6 +1899,13 @@ static int crypt_map(struct dm_target *ti, struct bio *bio)
 				dm_target_offset(ti, bio->bi_iter.bi_sector);
 		return DM_MAPIO_REMAPPED;
 	}
+
+	/*
+	 * Check if bio is too large, split as needed.
+	 */
+	if (unlikely(bio->bi_iter.bi_size > (BIO_MAX_PAGES << PAGE_SHIFT)) &&
+	    bio_data_dir(bio) == WRITE)
+		dm_accept_partial_bio(bio, ((BIO_MAX_PAGES << PAGE_SHIFT) >> SECTOR_SHIFT));
 
 	io = dm_per_bio_data(bio, cc->per_bio_data_size);
 	crypt_io_init(io, cc, bio, dm_target_offset(ti, bio->bi_iter.bi_sector));

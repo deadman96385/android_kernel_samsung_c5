@@ -187,7 +187,9 @@ static long msm_sensor_init_subdev_fops_ioctl(
 static ssize_t back_camera_type_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
-#if defined(CONFIG_S5K3P8SX_AK7372)
+#if defined(CONFIG_S5K3L2XX)
+  char cam_type[] = "LSI_S5K3L2XX\n";
+#elif defined(CONFIG_S5K3P8SX_AK7372)
   char cam_type[] = "LSI_S5K3P8SX_AK7372\n";
 #else
   char cam_type[] = "LSI_S5K3P3YX\n";
@@ -203,7 +205,7 @@ static ssize_t front_camera_type_show(struct device *dev,
 #elif defined(CONFIG_S5K5E3YX)
     char cam_type[] = "S5K5E3YX\n";
 #elif defined(CONFIG_S5K3P8SX)
-	char cam_type[] = "S5K3P8SX\n";
+    char cam_type[] = "S5K3P8SX\n";
 #else
 	char cam_type[] = "S5K4H5YX\n";
 #endif
@@ -606,7 +608,6 @@ static ssize_t rear_camera_hw_param_store(struct device *dev,
 	return size;
 }
 
-#if defined(CONFIG_GET_FRONT_MODULE_ID)
 static ssize_t front_camera_hw_param_show(struct device *dev,
 					 struct device_attribute *attr, char *buf)
 {
@@ -639,28 +640,6 @@ static ssize_t front_camera_hw_param_show(struct device *dev,
 
 	return rc;
 }
-
-#else
-static ssize_t front_camera_hw_param_show(struct device *dev,
-					 struct device_attribute *attr, char *buf)
-{
-	ssize_t rc = 0;
-	//int16_t moduelid_chk = 0;
-	struct cam_hw_param *ec_param = NULL;
-	msm_is_sec_get_front_hw_param(&ec_param);
-
-	if(ec_param != NULL) {
-		rc = sprintf(buf, "\"I2CF_AF\":\"%d\",\"I2CF_COM\":\"%d\",\"I2CF_OIS\":\"%d\","
-							"\"I2CF_SEN\":\"%d\",\"MIPIF_COM\":\"%d\",\"MIPIF_SEN\":\"%d\"\n",
-							ec_param->i2c_af_err_cnt, ec_param->i2c_comp_err_cnt, ec_param->i2c_ois_err_cnt,
-							ec_param->i2c_sensor_err_cnt, ec_param->mipi_comp_err_cnt, ec_param->mipi_sensor_err_cnt);
-	}
-
-	return rc;
-}
-
-#endif
-
 
 static ssize_t front_camera_hw_param_store(struct device *dev,
 					  struct device_attribute *attr, const char *buf, size_t size)
@@ -774,6 +753,7 @@ static int __init msm_sensor_init_module(void)
 {
 	struct device         *cam_dev_back;
 	struct device         *cam_dev_front;
+
 
 	int ret = 0;
 
@@ -911,6 +891,7 @@ static int __init msm_sensor_init_module(void)
 		ret = -ENODEV;
 		goto device_create_fail;
 	}
+
 #if !defined(CONFIG_DISABLE_SVC_REAR_MODULE)
 	if (sysfs_create_file(SVC, &dev_attr_SVC_rear_module.attr) < 0) {
 		printk("Failed to create device file!(%s)!\n",
@@ -918,6 +899,7 @@ static int __init msm_sensor_init_module(void)
 		ret = -ENODEV;
 		goto device_create_fail;
 	}
+
 #endif
 #endif
 

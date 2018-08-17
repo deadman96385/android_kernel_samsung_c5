@@ -236,7 +236,7 @@ struct spcom_device {
 	int channel_count;
 
 	/* private */
-	struct mutex cmd_lock;
+	struct mutex lock;
 
 	/* Link state */
 	struct completion link_state_changed;
@@ -1318,7 +1318,7 @@ static int spcom_handle_send_command(struct spcom_channel *ch,
 	 */
 	if (size < sizeof(*cmd)) {
 		pr_err("ch [%s] invalid cmd buf.\n",
-				ch->name);
+			ch->name);
 		return -EINVAL;
 	}
 
@@ -1336,12 +1336,12 @@ static int spcom_handle_send_command(struct spcom_channel *ch,
 	/* Check param validity */
 	if (buf_size > SPCOM_MAX_RESPONSE_SIZE) {
 		pr_err("ch [%s] invalid buf size [%d].\n",
-				ch->name, buf_size);
+			ch->name, buf_size);
 		return -EINVAL;
 	}
 	if (size != sizeof(*cmd) + buf_size) {
 		pr_err("ch [%s] invalid cmd size [%d].\n",
-				ch->name, size);
+			ch->name, size);
 		return -EINVAL;
 	}
 
@@ -1567,7 +1567,7 @@ static int spcom_handle_lock_ion_buf_command(struct spcom_channel *ch,
 
 	if (size != sizeof(*cmd)) {
 		pr_err("cmd size [%d] , expected [%d].\n",
-					(int)size, (int) sizeof(*cmd));
+		       (int) size,  (int) sizeof(*cmd));
 		return -EINVAL;
 	}
 
@@ -1620,7 +1620,7 @@ static int spcom_handle_unlock_ion_buf_command(struct spcom_channel *ch,
 
 	if (size != sizeof(*cmd)) {
 		pr_err("cmd size [%d] , expected [%d].\n",
-					(int)size, (int) sizeof(*cmd));
+		       (int) size,  (int) sizeof(*cmd));
 		return -EINVAL;
 	}
 
@@ -1697,8 +1697,6 @@ static int spcom_handle_write(struct spcom_channel *ch,
 	swap_id = htonl(cmd->cmd_id);
 	memcpy(cmd_name, &swap_id, sizeof(int));
 
-	mutex_lock(&spcom_dev->cmd_lock);
-
 	pr_debug("cmd_id [0x%x] cmd_name [%s].\n", cmd_id, cmd_name);
 
 	switch (cmd_id) {
@@ -1722,10 +1720,8 @@ static int spcom_handle_write(struct spcom_channel *ch,
 		break;
 	default:
 		pr_err("Invalid Command Id [0x%x].\n", (int) cmd->cmd_id);
-		ret = -EINVAL;
+		return -EINVAL;
 	}
-
-	mutex_unlock(&spcom_dev->cmd_lock);
 
 	return ret;
 }
@@ -2394,7 +2390,7 @@ static int spcom_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	spcom_dev = dev;
-	mutex_init(&spcom_dev->cmd_lock);
+	mutex_init(&dev->lock);
 	init_completion(&dev->link_state_changed);
 	spcom_dev->link_state = GLINK_LINK_STATE_DOWN;
 

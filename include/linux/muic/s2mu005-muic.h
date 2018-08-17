@@ -216,6 +216,8 @@ struct s2mu005_muic_data {
 	bool	is_rustproof;
 	bool	is_otg_test;
 	bool	undefined_range;
+	bool    jig_disable;
+	bool    jigonb_enable;
 
 #if !defined(CONFIG_MUIC_S2MU005_ENABLE_AUTOSW)
 	bool	is_jig_on;

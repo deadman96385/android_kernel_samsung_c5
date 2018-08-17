@@ -1,6 +1,6 @@
 /* Qualcomm Crypto Engine driver.
  *
- * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -94,7 +94,6 @@ enum qce_owner {
 
 struct dummy_request {
 	struct qce_sha_req sreq;
-	uint8_t *in_buf;
 	struct scatterlist sg;
 	struct ahash_request areq;
 };
@@ -154,6 +153,7 @@ struct qce_device {
 	atomic_t bunch_cmd_seq;
 	atomic_t last_intr_seq;
 	bool cadence_flag;
+	uint8_t *dummyreq_in_buf;
 };
 
 static void print_notify_debug(struct sps_event_notify *notify);
@@ -307,11 +307,11 @@ static int _probe_ce_engine(struct qce_device *pce_dev)
 	pce_dev->ce_bam_info.ce_burst_size = MAX_CE_BAM_BURST_SIZE;
 
 	dev_info(pce_dev->pdev,
-			"CE device = 0x%x\n, "
-			"IO base, CE = 0x%p\n, "
+			"CE device = 0x%x\n"
+			"IO base, CE = 0x%pK\n"
 			"Consumer (IN) PIPE %d,    "
 			"Producer (OUT) PIPE %d\n"
-			"IO base BAM = 0x%p\n"
+			"IO base BAM = 0x%pK\n"
 			"BAM IRQ %d\n"
 			"Engines Availability = 0x%x\n",
 			pce_dev->ce_bam_info.ce_device,
@@ -1173,7 +1173,7 @@ static void _qce_dump_descr_fifos_dbg(struct qce_device *pce_dev, int req_info)
 
 #define QCE_WRITE_REG(val, addr)					\
 {									\
-	pr_info("      [0x%p] 0x%x\n", addr, (uint32_t)val);		\
+	pr_info("      [0x%pK] 0x%x\n", addr, (uint32_t)val);		\
 	writel_relaxed(val, addr);					\
 }
 
@@ -1361,8 +1361,8 @@ go_proc:
 	/* issue go to crypto   */
 	if (use_hw_key == false) {
 		QCE_WRITE_REG(((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-					(1 << CRYPTO_CLR_CNTXT)),
-					pce_dev->iobase + CRYPTO_GOPROC_REG);
+				(1 << CRYPTO_CLR_CNTXT)),
+				pce_dev->iobase + CRYPTO_GOPROC_REG);
 	} else {
 		QCE_WRITE_REG(((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP)),
 				pce_dev->iobase + CRYPTO_GOPROC_QC_KEY_REG);
@@ -1543,8 +1543,8 @@ static int _ce_setup_aead_direct(struct qce_device *pce_dev,
 							CRYPTO_CONFIG_REG));
 	/* issue go to crypto   */
 	QCE_WRITE_REG(((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-					(1 << CRYPTO_CLR_CNTXT)),
-					pce_dev->iobase + CRYPTO_GOPROC_REG);
+				(1 << CRYPTO_CLR_CNTXT)),
+				pce_dev->iobase + CRYPTO_GOPROC_REG);
 	/*
 	 * Ensure previous instructions (setting the GO register)
 	 * was completed before issuing a DMA transfer request
@@ -1863,8 +1863,8 @@ static int _ce_setup_cipher_direct(struct qce_device *pce_dev,
 	/* issue go to crypto   */
 	if (use_hw_key == false) {
 		QCE_WRITE_REG(((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-						(1 << CRYPTO_CLR_CNTXT)),
-						pce_dev->iobase + CRYPTO_GOPROC_REG);
+				(1 << CRYPTO_CLR_CNTXT)),
+				pce_dev->iobase + CRYPTO_GOPROC_REG);
 	} else {
 		QCE_WRITE_REG(((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP)),
 				pce_dev->iobase + CRYPTO_GOPROC_QC_KEY_REG);
@@ -1952,8 +1952,8 @@ static int _ce_f9_setup_direct(struct qce_device *pce_dev,
 							CRYPTO_CONFIG_REG));
 	/* write go */
 	QCE_WRITE_REG(((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-							(1 << CRYPTO_CLR_CNTXT)),
-							pce_dev->iobase +  CRYPTO_GOPROC_REG);
+				(1 << CRYPTO_CLR_CNTXT)),
+				pce_dev->iobase +  CRYPTO_GOPROC_REG);
 	/*
 	 * Ensure previous instructions (setting the GO register)
 	 * was completed before issuing a DMA transfer request
@@ -2030,8 +2030,8 @@ static int _ce_f8_setup_direct(struct qce_device *pce_dev,
 							CRYPTO_CONFIG_REG));
 	/* write go */
 	QCE_WRITE_REG(((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-							(1 << CRYPTO_CLR_CNTXT)),
-							pce_dev->iobase +  CRYPTO_GOPROC_REG);
+				(1 << CRYPTO_CLR_CNTXT)),
+				pce_dev->iobase +  CRYPTO_GOPROC_REG);
 	/*
 	 * Ensure previous instructions (setting the GO register)
 	 * was completed before issuing a DMA transfer request
@@ -2679,7 +2679,7 @@ static int qce_sps_init_ep_conn(struct qce_device *pce_dev,
 		sps_event->callback = NULL;
 	}
 
-	pr_debug("success, %s : pipe_handle=0x%lx, desc fifo base (phy) = 0x%p\n",
+	pr_debug("success, %s : pipe_handle=0x%lx, desc fifo base (phy) = 0x%pK\n",
 		is_producer ? "PRODUCER(RX/OUT)" : "CONSUMER(TX/IN)",
 		(uintptr_t)sps_pipe_info, &sps_connect_info->desc.phys_base);
 	goto out;
@@ -2844,7 +2844,7 @@ static int qce_sps_get_bam(struct qce_device *pce_dev)
 	bam.ipc_loglevel = QCE_BAM_DEFAULT_IPC_LOGLVL;
 	bam.options |= SPS_BAM_CACHED_WP;
 	pr_debug("bam physical base=0x%lx\n", (uintptr_t)bam.phys_addr);
-	pr_debug("bam virtual base=0x%p\n", bam.virt_addr);
+	pr_debug("bam virtual base=0x%pK\n", bam.virt_addr);
 
 	/* Register CE Peripheral BAM device to SPS driver */
 	rc = sps_register_bam_device(&bam, &pbam->handle);
@@ -2948,7 +2948,7 @@ static void print_notify_debug(struct sps_event_notify *notify)
 	phys_addr_t addr =
 		DESC_FULL_ADDR((phys_addr_t) notify->data.transfer.iovec.flags,
 				  notify->data.transfer.iovec.addr);
-	pr_debug("sps ev_id=%d, addr=0x%pa, size=0x%x, flags=0x%x user=0x%p\n",
+	pr_debug("sps ev_id=%d, addr=0x%pa, size=0x%x, flags=0x%x user=0x%pK\n",
 			notify->event_id, &addr,
 			notify->data.transfer.iovec.size,
 			notify->data.transfer.iovec.flags,
@@ -2988,6 +2988,7 @@ static void qce_multireq_timeout(unsigned long data)
 	struct qce_device *pce_dev = (struct qce_device *)data;
 	int ret = 0;
 	int last_seq;
+	unsigned long flags;
 
 	last_seq = atomic_read(&pce_dev->bunch_cmd_seq);
 	if (last_seq == 0 ||
@@ -2997,21 +2998,33 @@ static void qce_multireq_timeout(unsigned long data)
 		return;
 	}
 	/* last bunch mode command time out */
+
+	/*
+	 * From here to dummy request finish sps request and set owner back
+	 * to none, we disable interrupt.
+	 * So it won't get preempted or interrupted. If bam inerrupts happen
+	 * between, and completion callback gets called from BAM, a new
+	 * request may be issued by the client driver.  Deadlock may happen.
+	 */
+	local_irq_save(flags);
 	if (cmpxchg(&pce_dev->owner, QCE_OWNER_NONE, QCE_OWNER_TIMEOUT)
 							!= QCE_OWNER_NONE) {
+		local_irq_restore(flags);
 		mod_timer(&(pce_dev->timer), (jiffies + DELAY_IN_JIFFIES));
 		return;
 	}
-	del_timer(&(pce_dev->timer));
-	pce_dev->mode = IN_INTERRUPT_MODE;
-	pce_dev->qce_stats.no_of_timeouts++;
-	pr_debug("pcedev %d mode switch to INTR\n", pce_dev->dev_no);
 
 	ret = qce_dummy_req(pce_dev);
 	if (ret)
 		pr_warn("pcedev %d: Failed to insert dummy req\n",
 				pce_dev->dev_no);
 	cmpxchg(&pce_dev->owner, QCE_OWNER_TIMEOUT, QCE_OWNER_NONE);
+	pce_dev->mode = IN_INTERRUPT_MODE;
+	local_irq_restore(flags);
+
+	del_timer(&(pce_dev->timer));
+	pce_dev->qce_stats.no_of_timeouts++;
+	pr_debug("pcedev %d mode switch to INTR\n", pce_dev->dev_no);
 }
 
 void qce_get_driver_stats(void *handle)
@@ -3288,8 +3301,8 @@ static int _setup_cipher_aes_cmdlistptrs(struct qce_device *pdev, int cri_index,
 			pdev->reg.crypto_cfg_le, NULL);
 
 	qce_add_cmd_element(pdev, &ce_vaddr, CRYPTO_GOPROC_REG,
-					((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-					(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
+			((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
+			(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
 
 	pcl_info->size = (uintptr_t)ce_vaddr - (uintptr_t)ce_vaddr_start;
 	*pvaddr = (unsigned char *) ce_vaddr;
@@ -3402,8 +3415,8 @@ static int _setup_cipher_des_cmdlistptrs(struct qce_device *pdev, int cri_index,
 			pdev->reg.crypto_cfg_le, NULL);
 
 	qce_add_cmd_element(pdev, &ce_vaddr, CRYPTO_GOPROC_REG,
-					((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-					(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
+			((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
+			(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
 
 	pcl_info->size = (uintptr_t)ce_vaddr - (uintptr_t)ce_vaddr_start;
 	*pvaddr = (unsigned char *) ce_vaddr;
@@ -3446,8 +3459,8 @@ static int _setup_cipher_null_cmdlistptrs(struct qce_device *pdev,
 						NULL);
 
 	qce_add_cmd_element(pdev, &ce_vaddr, CRYPTO_GOPROC_REG,
-					((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-					(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
+			((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
+			(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
 
 	pcl_info->size = (uintptr_t)ce_vaddr - (uintptr_t)ce_vaddr_start;
 	*pvaddr = (unsigned char *) ce_vaddr;
@@ -3624,8 +3637,8 @@ static int _setup_auth_cmdlistptrs(struct qce_device *pdev, int cri_index,
 					pdev->reg.crypto_cfg_le, NULL);
 
 	qce_add_cmd_element(pdev, &ce_vaddr, CRYPTO_GOPROC_REG,
-					((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-					(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
+			((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
+			(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
 
 	pcl_info->size = (uintptr_t)ce_vaddr - (uintptr_t)ce_vaddr_start;
 	*pvaddr = (unsigned char *) ce_vaddr;
@@ -3841,8 +3854,8 @@ static int _setup_aead_cmdlistptrs(struct qce_device *pdev,
 					pdev->reg.crypto_cfg_le, NULL);
 
 	qce_add_cmd_element(pdev, &ce_vaddr, CRYPTO_GOPROC_REG,
-					((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-					(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
+			((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
+			(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
 
 	pcl_info->size = (uintptr_t)ce_vaddr - (uintptr_t)ce_vaddr_start;
 	*pvaddr = (unsigned char *) ce_vaddr;
@@ -3974,8 +3987,8 @@ static int _setup_aead_ccm_cmdlistptrs(struct qce_device *pdev, int cri_index,
 					pdev->reg.crypto_cfg_le, NULL);
 
 	qce_add_cmd_element(pdev, &ce_vaddr, CRYPTO_GOPROC_REG,
-					((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-					(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
+			((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
+			(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
 
 	pcl_info->size = (uintptr_t)ce_vaddr - (uintptr_t)ce_vaddr_start;
 	*pvaddr = (unsigned char *) ce_vaddr;
@@ -4060,8 +4073,8 @@ static int _setup_f8_cmdlistptrs(struct qce_device *pdev, int cri_index,
 					pdev->reg.crypto_cfg_le, NULL);
 
 	qce_add_cmd_element(pdev, &ce_vaddr, CRYPTO_GOPROC_REG,
-					((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-					(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
+			((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
+			(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
 
 	pcl_info->size = (uintptr_t)ce_vaddr - (uintptr_t)ce_vaddr_start;
 	*pvaddr = (unsigned char *) ce_vaddr;
@@ -4142,8 +4155,8 @@ static int _setup_f9_cmdlistptrs(struct qce_device *pdev, int cri_index,
 					pdev->reg.crypto_cfg_le, NULL);
 
 	qce_add_cmd_element(pdev, &ce_vaddr, CRYPTO_GOPROC_REG,
-					((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
-					(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
+			((1 << CRYPTO_GO) | (1 << CRYPTO_RESULTS_DUMP) |
+			(1 << CRYPTO_CLR_CNTXT)), &pcl_info->go_proc);
 
 	pcl_info->size = (uintptr_t)ce_vaddr - (uintptr_t)ce_vaddr_start;
 	*pvaddr = (unsigned char *) ce_vaddr;
@@ -4316,8 +4329,6 @@ static int qce_setup_ce_sps_data(struct qce_device *pce_dev)
 				(uintptr_t)vaddr;
 		vaddr += pce_dev->ce_bam_info.ce_burst_size * 2;
 	}
-	pce_dev->dummyreq.in_buf = (uint8_t *)vaddr;
-	vaddr += DUMMY_REQ_DATA_LEN;
 	if ((vaddr - pce_dev->coh_vmem) > pce_dev->memsize ||
 							iovec_memsize < 0)
 		panic("qce50: Not enough coherent memory. Allocate %x , need %lx\n",
@@ -5916,8 +5927,8 @@ static int setup_dummy_req(struct qce_device *pce_dev)
 	"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopqopqrpqrs";
 	int len = DUMMY_REQ_DATA_LEN;
 
-	memcpy(pce_dev->dummyreq.in_buf, input, len);
-	sg_set_buf(&pce_dev->dummyreq.sg, pce_dev->dummyreq.in_buf, len);
+	memcpy(pce_dev->dummyreq_in_buf, input, len);
+	sg_set_buf(&pce_dev->dummyreq.sg, pce_dev->dummyreq_in_buf, len);
 	sg_mark_end(&pce_dev->dummyreq.sg);
 
 	pce_dev->dummyreq.sreq.alg = QCE_HASH_SHA1;
@@ -5986,6 +5997,10 @@ void *qce_open(struct platform_device *pdev, int *rc)
 	if (pce_dev->iovec_vmem == NULL)
 		goto err_mem;
 
+	pce_dev->dummyreq_in_buf = kzalloc(DUMMY_REQ_DATA_LEN, GFP_KERNEL);
+	if (pce_dev->dummyreq_in_buf == NULL)
+		goto err_mem;
+
 	*rc = __qce_init_clk(pce_dev);
 	if (*rc)
 		goto err_mem;
@@ -6025,6 +6040,7 @@ err_enable_clk:
 	__qce_deinit_clk(pce_dev);
 
 err_mem:
+	kfree(pce_dev->dummyreq_in_buf);
 	kfree(pce_dev->iovec_vmem);
 	if (pce_dev->coh_vmem)
 		dma_free_coherent(pce_dev->pdev, pce_dev->memsize,
@@ -6056,6 +6072,7 @@ int qce_close(void *handle)
 	if (pce_dev->coh_vmem)
 		dma_free_coherent(pce_dev->pdev, pce_dev->memsize,
 				pce_dev->coh_vmem, pce_dev->coh_pmem);
+	kfree(pce_dev->dummyreq_in_buf);
 	kfree(pce_dev->iovec_vmem);
 
 	qce_disable_clk(pce_dev);

@@ -135,6 +135,10 @@ enum {
 #define MINIMUM_INPUT_CURRENT			300
 #define SLOW_CHARGING_CURRENT_STANDARD	400
 
+#define ENABLE 1
+#define DISABLE 0
+
+extern bool sec_bat_get_slate_mode(void);
 extern sec_battery_platform_data_t sec_battery_pdata;
 extern int poweroff_charging;
 

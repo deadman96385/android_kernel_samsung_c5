@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -219,7 +219,6 @@ static void diagfwd_data_read_done(struct diagfwd_info *fwd_info,
 	int write_len = 0;
 	unsigned char *write_buf = NULL;
 	struct diagfwd_buf_t *temp_buf = NULL;
-	struct diag_md_session_t *session_info = NULL;
 	uint8_t hdlc_disabled = 0;
 	if (!fwd_info || !buf || len <= 0) {
 		diag_ws_release();
@@ -240,11 +239,8 @@ static void diagfwd_data_read_done(struct diagfwd_info *fwd_info,
 
 	mutex_lock(&driver->hdlc_disable_mutex);
 	mutex_lock(&fwd_info->data_mutex);
-	session_info = diag_md_session_get_peripheral(fwd_info->peripheral);
-	if (session_info)
-		hdlc_disabled = session_info->hdlc_disabled;
-	else
-		hdlc_disabled = driver->hdlc_disabled;
+
+	hdlc_disabled = driver->p_hdlc_disabled[fwd_info->peripheral];
 
 	if (!driver->feature[fwd_info->peripheral].encode_hdlc) {
 		if (fwd_info->buf_1 && fwd_info->buf_1->data == buf) {
@@ -643,10 +639,10 @@ void diagfwd_close_transport(uint8_t transport, uint8_t peripheral)
 
 	}
 
+	mutex_lock(&driver->diagfwd_channel_mutex[peripheral]);
 	fwd_info = &early_init_info[transport][peripheral];
 	if (fwd_info->p_ops && fwd_info->p_ops->close)
 		fwd_info->p_ops->close(fwd_info->ctxt);
-	mutex_lock(&driver->diagfwd_channel_mutex[peripheral]);
 	fwd_info = &early_init_info[transport_open][peripheral];
 	dest_info = &peripheral_info[TYPE_CNTL][peripheral];
 	dest_info->inited = 1;
@@ -909,8 +905,6 @@ void diagfwd_channel_read(struct diagfwd_info *fwd_info)
 	}
 
 	if (fwd_info->buf_1 && !atomic_read(&fwd_info->buf_1->in_busy)) {
-		temp_buf = fwd_info->buf_1;
-		atomic_set(&temp_buf->in_busy, 1);
 		if (driver->feature[fwd_info->peripheral].encode_hdlc &&
 		    (fwd_info->type == TYPE_DATA ||
 		     fwd_info->type == TYPE_CMD)) {
@@ -920,9 +914,11 @@ void diagfwd_channel_read(struct diagfwd_info *fwd_info)
 			read_buf = fwd_info->buf_1->data;
 			read_len = fwd_info->buf_1->len;
 		}
+		if (read_buf) {
+			temp_buf = fwd_info->buf_1;
+			atomic_set(&temp_buf->in_busy, 1);
+		}
 	} else if (fwd_info->buf_2 && !atomic_read(&fwd_info->buf_2->in_busy)) {
-		temp_buf = fwd_info->buf_2;
-		atomic_set(&temp_buf->in_busy, 1);
 		if (driver->feature[fwd_info->peripheral].encode_hdlc &&
 		    (fwd_info->type == TYPE_DATA ||
 		     fwd_info->type == TYPE_CMD)) {
@@ -931,6 +927,10 @@ void diagfwd_channel_read(struct diagfwd_info *fwd_info)
 		} else {
 			read_buf = fwd_info->buf_2->data;
 			read_len = fwd_info->buf_2->len;
+		}
+		if (read_buf) {
+			temp_buf = fwd_info->buf_2;
+			atomic_set(&temp_buf->in_busy, 1);
 		}
 	} else {
 		pr_debug("diag: In %s, both buffers are empty for p: %d, t: %d\n",

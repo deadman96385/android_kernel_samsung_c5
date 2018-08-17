@@ -3,6 +3,8 @@
 #ifndef _PCAL6416A_H_
 #define _PCAL6416A_H_
 
+#define DRV_NAME	"pcal6416a-gpio"
+
 #define PCAL6416A_INPUT			0x00  /* Input port [RO]                            */
 #define PCAL6416A_DAT_OUT		0x02  /* GPIO DATA OUT [R/W]                        */
 #define PCAL6416A_POLARITY		0x04  /* Polarity Inversion port [R/W]              */
@@ -19,6 +21,12 @@
 #define NO_PULL				0x00
 #define PULL_DOWN			0x01
 #define PULL_UP				0x02
+
+#define POWER_ON			1
+#define POWER_OFF			0
+
+struct device *pcal6416a_dev;
+extern struct class *sec_class;
 
 /* EXPANDER GPIO Drive Strength */
 enum {

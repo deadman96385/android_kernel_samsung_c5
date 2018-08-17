@@ -78,7 +78,6 @@ const char *FS_TYPE_STR[] = {
 static struct kset *sdfat_kset;
 static struct kmem_cache *sdfat_inode_cachep;
 
-
 static int sdfat_default_codepage = CONFIG_SDFAT_DEFAULT_CODEPAGE;
 static char sdfat_default_iocharset[] = CONFIG_SDFAT_DEFAULT_IOCHARSET;
 static const char sdfat_iocharset_with_utf8[] = "iso8859-1";
@@ -200,6 +199,19 @@ static inline unsigned long __sdfat_init_name_hash(const struct dentry *unused)
 }
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
+	/* EMPTY */
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 21) */
+static inline void inode_lock(struct inode *inode)
+{
+	mutex_lock(&inode->i_mutex);
+}
+
+static inline void inode_unlock(struct inode *inode)
+{
+	mutex_unlock(&inode->i_mutex);
+}
+#endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 3, 0)
 static void sdfat_writepage_end_io(struct bio *bio)
@@ -1363,7 +1375,7 @@ static void defrag_cleanup_reqs(INOUT struct super_block *sb, IN int error)
  * @return	0 on success, -errno otherwise
  * @param	inode	inode
  * @param	chunk	given chunk
- * @remark	protected by i_mutex and super_lock
+ * @remark	protected by inode_lock and super_lock
  */
 static int
 defrag_validate_pages(
@@ -1524,9 +1536,9 @@ defrag_validate_reqs(
 			i, inode, chunk->i_pos, chunk->f_clus, chunk->d_clus,
 			chunk->nr_clus, chunk->prev_clus, chunk->next_clus);
 		/**
-		 * Lock ordering: i_mutex -> lock_super
+		 * Lock ordering: inode_lock -> lock_super
 		 */
-		mutex_lock(&inode->i_mutex);
+		inode_lock(inode);
 		__lock_super(sb);
 
 		/* Check if enough buffers exist for chunk->new_idx */
@@ -1592,7 +1604,7 @@ unlock:
 		}
 		iput(inode);
 		__unlock_super(sb);
-		mutex_unlock(&inode->i_mutex);
+		inode_unlock(inode);
 	}
 
 	/* Return error if all chunks are invalid */
@@ -1697,7 +1709,7 @@ sdfat_ioctl_defrag_req(
 
 	dfr_debug("IOC_DFR_REQ started (mode %d, nr_req %d)", head.mode, len - 1);
 	if (get_order(len * sizeof(struct defrag_chunk_info)) > MAX_ORDER) {
-		dfr_debug("len %d, sizeof(struct defrag_chunk_info) %d, MAX_ORDER %d",
+		dfr_debug("len %u, sizeof(struct defrag_chunk_info) %lu, MAX_ORDER %d",
 				len, sizeof(struct defrag_chunk_info), MAX_ORDER);
 		err = -EINVAL;
 		goto error;
@@ -1856,11 +1868,11 @@ sdfat_ioctl_defrag_trav(
 	}
 
 	/* Scan given directory and gather info */
-	mutex_lock(&inode->i_mutex);
+	inode_lock(inode);
 	__lock_super(sb);
 	err = fsapi_dfr_scan_dir(sb, (void *)args);
 	__unlock_super(sb);
-	mutex_unlock(&inode->i_mutex);
+	inode_unlock(inode);
 	ERR_HANDLE(err);
 
 	/* Copy the result to user */
@@ -2330,6 +2342,8 @@ out:
 	__unlock_d_revalidate(dentry);
 	__unlock_super(sb);
 	TMSG("%s exited with err(%d)\n", __func__, err);
+	if (!err)
+		sdfat_statistics_set_create(fid.flags);
 	return err;
 }
 
@@ -2599,6 +2613,8 @@ out:
 	__unlock_d_revalidate(dentry);
 	__unlock_super(sb);
 	TMSG("%s exited with err(%d)\n", __func__, err);
+	if (!err)
+		sdfat_statistics_set_mkdir(fid.flags);
 	return err;
 }
 
@@ -3121,6 +3137,10 @@ static int sdfat_bmap(struct inode *inode, sector_t sector, sector_t *phys,
 			return -EIO;
 		return err;
 	}
+
+	/* FOR BIGDATA */
+	sdfat_statistics_set_rw(SDFAT_I(inode)->fid.flags,
+				clu_offset, *create & BMAP_ADD_CLUSTER);
 
 	if (!IS_CLUS_EOF(cluster)) {
 		/* sector offset in cluster */
@@ -4856,6 +4876,9 @@ static int sdfat_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	sdfat_log_msg(sb, KERN_INFO, "mounted successfully!");
+	/* FOR BIGDATA */
+	sdfat_statistics_set_mnt(&sbi->fsi);
+	sdfat_statistics_set_vol_size(sb);
 	return 0;
 
 failed_mount3:
@@ -4970,6 +4993,10 @@ static int __init init_sdfat_fs(void)
 		goto error;
 	}
 
+	err = sdfat_statistics_init(sdfat_kset);
+	if (err)
+		goto error;
+
 	err = sdfat_init_inodecache();
 	if (err) {
 		pr_err("[SDFAT] failed to initialize inode cache\n");
@@ -4984,6 +5011,8 @@ static int __init init_sdfat_fs(void)
 
 	return 0;
 error:
+	sdfat_statistics_uninit();
+
 	if (sdfat_kset) {
 		sysfs_remove_group(&sdfat_kset->kobj, &attr_group);
 		kset_unregister(sdfat_kset);
@@ -4999,6 +5028,8 @@ error:
 
 static void __exit exit_sdfat_fs(void)
 {
+	sdfat_statistics_uninit();
+
 	if (sdfat_kset) {
 		sysfs_remove_group(&sdfat_kset->kobj, &attr_group);
 		kset_unregister(sdfat_kset);

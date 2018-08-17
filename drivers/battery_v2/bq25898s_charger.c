@@ -106,7 +106,7 @@ static int bq25898s_get_float_voltage(struct bq25898s_charger *charger)
 	int max_voltage;
 
 	bq25898s_read_reg(charger->i2c, BQ25898S_CHG_REG_06, &data);
-	max_voltage = (data >> 2) * 16;
+	max_voltage = (data >> 2) * 16 * 10 + 38400;
 	pr_info("%s : DATA(0x%02x) VOLTAGE(%d)\n", __func__, data, max_voltage);
 
 	return max_voltage;
@@ -118,7 +118,7 @@ static int bq25898s_get_input_current(struct bq25898s_charger *charger)
 	int input_current;
 
 	bq25898s_read_reg(charger->i2c, BQ25898S_CHG_REG_00, &data);
-	input_current = (data & 0x3F) * 50;
+	input_current = (data & 0x3F) * 50 + 100;
 	pr_info("%s : DATA(0x%02x), current(%d)\n", __func__, data, input_current);
 
 	return input_current;
@@ -139,7 +139,10 @@ static void bq25898s_set_input_current(struct bq25898s_charger *charger, int inp
 {
 	u8 data;
 
-	data = (input_current - 100) / 50;
+	if (input_current < 100)
+		data = 0;
+	else
+		data = (input_current - 100) / 50;
 
 	pr_info ("%s : SET INPUT CURRENT(%d), 0x%x\n", __func__, input_current, data);
 
@@ -149,10 +152,14 @@ static void bq25898s_set_input_current(struct bq25898s_charger *charger, int inp
 
 static void bq25898s_watchdog_reset(struct bq25898s_charger *charger)
 {
+	u8 data;
+
 	bq25898s_update_reg(charger->i2c, BQ25898S_CHG_REG_03, 0x40, 0x40);
+	bq25898s_read_reg(charger->i2c, BQ25898S_CHG_REG_03, &data);
+	pr_info("%s : BQ25898S_CHG_REG_03(0x%02x)\n", __func__, data);
 }
 
-static void bq25898s_set_watchdog_timer(struct bq25898s_charger *charger, int time)
+static void bq25898s_set_watchdog_timer_en(struct bq25898s_charger *charger, int time)
 {
 	bq25898s_update_reg(charger->i2c, BQ25898S_CHG_REG_07,
 			time << BQ25898S_CHG_WATCHDOG_SHIFT, BQ25898S_CHG_WATCHDOG_MASK);
@@ -168,18 +175,6 @@ static void bq25898s_set_float_voltage(struct bq25898s_charger *charger, int flo
 			data, BQ25898S_CHG_VREG_MASK);
 }
 
-static void bq25898s_charger_initialize(struct bq25898s_charger *charger)
-{
-	bq25898s_set_input_current(charger, 3150);
-	bq25898s_set_watchdog_timer(charger, WATCHDOG_TIMER_80S);
-	/* termination current 64mA*/
-	bq25898s_update_reg(charger->i2c, BQ25898S_CHG_REG_05, 0x1, 0x0F);
-	/* set max float voltage */
-	bq25898s_set_float_voltage(charger, 46080);
-
-	bq25898s_test_read(charger);
-}
-
 static void bq25898s_set_charger_state(struct bq25898s_charger *charger,
 	int enable)
 {
@@ -187,6 +182,31 @@ static void bq25898s_set_charger_state(struct bq25898s_charger *charger,
 
 	bq25898s_update_reg(charger->i2c, BQ25898S_CHG_REG_03,
 			(enable << BQ25898S_CHG_CONFIG_SHIFT), BQ25898S_CHG_CONFIG_MASK);
+	bq25898s_set_watchdog_timer_en(charger, enable? WATCHDOG_TIMER_80S: WATCHDOG_TIMER_DISABLE);
+	bq25898s_test_read(charger);
+}
+
+static void bq25898s_set_topoff_current(struct bq25898s_charger *charger, int eoc)
+{
+	u8 data;
+
+	data = (eoc - 64) / 64;
+	pr_info("%s: eoc(%d), 0x%x \n", __func__, eoc, data);
+	bq25898s_update_reg(charger->i2c, BQ25898S_CHG_REG_05,
+		data, BQ25898S_CHG_ITERM_MASK);
+}
+
+static void bq25898s_charger_initialize(struct bq25898s_charger *charger)
+{
+	bq25898s_set_charger_state(charger, DISABLE);
+	bq25898s_set_input_current(charger, 500);
+	bq25898s_set_charge_current(charger, 500);
+	/* Disable AUTO_DPDM_EN */
+	bq25898s_update_reg(charger->i2c, BQ25898S_CHG_REG_02, 0x0 << 0, 0x1 << 0);
+	/* termination current */
+	bq25898s_set_topoff_current(charger, charger->full_check_current);
+	/* set flolat voltage */
+	bq25898s_set_float_voltage(charger, charger->float_voltage);
 	bq25898s_test_read(charger);
 }
 
@@ -206,8 +226,7 @@ static int bq25898s_chg_get_property(struct power_supply *psy,
 		enum power_supply_property psp,
 		union power_supply_propval *val)
 {
-	struct bq25898s_charger *charger =
-		container_of(psy, struct bq25898s_charger, psy_chg);
+	struct bq25898s_charger *charger = container_of(psy, struct bq25898s_charger, psy_chg);
 	enum power_supply_ext_property ext_psp = psp;
 
 	val->intval = 0;
@@ -224,13 +243,15 @@ static int bq25898s_chg_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_HEALTH:
 		bq25898s_watchdog_reset(charger);
 		bq25898s_test_read(charger);
+		val->intval = POWER_SUPPLY_HEALTH_GOOD;
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
-		bq25898s_get_input_current(charger);
+		val->intval = bq25898s_get_input_current(charger);
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
+	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT:	
 		val->intval = bq25898s_get_charge_current(charger);
-		break;
+		break;	
 	case POWER_SUPPLY_PROP_CURRENT_AVG:
 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
 		break;
@@ -253,7 +274,7 @@ static int bq25898s_chg_get_property(struct power_supply *psy,
 					val->intval = 1;
 				else
 					val->intval = 0;
-				pr_info("%s: reg_data : %d\n", __func__,reg_data);
+				pr_info("%s: reg_data : 0x%02X\n", __func__,reg_data);
 			}
 			break;
 		case POWER_SUPPLY_EXT_PROP_CHECK_MULTI_CHARGE:
@@ -274,8 +295,7 @@ static int bq25898s_chg_set_property(struct power_supply *psy,
 		enum power_supply_property psp,
 		const union power_supply_propval *val)
 {
-	struct bq25898s_charger *charger =
-		container_of(psy, struct bq25898s_charger, psy_chg);
+	struct bq25898s_charger *charger = container_of(psy, struct bq25898s_charger, psy_chg);
 
 	switch (psp) {
 	/* val->intval : type */
@@ -293,15 +313,21 @@ static int bq25898s_chg_set_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_ONLINE:
 		charger->cable_type = val->intval;
-		bq25898s_charger_initialize(charger);
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
-		charger->float_voltage = val->intval;
+		if (val->intval / 1000 < 10) /* chg_float_voltage_conv = 1 */
+			charger->float_voltage = val->intval * 10;
+		else /* chg_float_voltage_conv = 10 */
+			charger->float_voltage = val->intval;
+		bq25898s_set_float_voltage(charger, charger->float_voltage);
 		break;
 	case POWER_SUPPLY_PROP_STATUS:
 	case POWER_SUPPLY_PROP_CURRENT_FULL:
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
+		charger->input_current = val->intval;
+		bq25898s_set_input_current(charger, charger->input_current);
+		break;
 	case POWER_SUPPLY_PROP_HEALTH:
 		return -ENODATA;
 	default:
@@ -384,14 +410,14 @@ static ssize_t bq25898s_show_data(struct device *dev,
 	if (charger->size == 0)
 		charger->size = 1;
 
-	for (i = 0; i < charger->size; i++) {
+	for (i = 0; i <= charger->size; i++) {
 		if (bq25898s_read_reg(charger->i2c, charger->addr+i, &data) < 0) {
 			dev_info(charger->dev,
 					"%s: read fail\n", __func__);
 			count += sprintf(buf+count, "addr: 0x%x read fail\n", charger->addr+i);
 			continue;
 		}
-		count += sprintf(buf+count, "addr: 0x%x, data: 0x%x\n", charger->addr+i,data);
+		count += sprintf(buf+count, "0x%02x : 0x%02x\n", charger->addr+i,data);
 	}
 	return count;
 }
@@ -430,23 +456,27 @@ static int bq25898s_charger_parse_dt(struct bq25898s_charger *charger,
 			pdata->irq_gpio = ret;
 			pr_info("%s: irq-gpio = %d\n", __func__, pdata->irq_gpio);
 		}
-	}
-	np = of_find_node_by_name(NULL, "battery");
-	if (!np) {
-		pr_err("%s np NULL\n", __func__);
-	} else {
-		ret = of_property_read_u32(np, "battery,chg_float_voltage",
-					   &charger->float_voltage);
+
+		ret = of_property_read_u32(np, "bq25898s-charger,chg_float_voltage",
+					   &pdata->float_voltage);
 		if (ret) {
-			pr_info("%s: battery,chg_float_voltage is Empty\n", __func__);
-			charger->float_voltage = 42000;
-		}
+			pr_info("%s: bq25898s-charger,chg_float_voltage is empty\n", __func__);
+			charger->float_voltage  = 43000;
+		} else
+			charger->float_voltage = pdata->float_voltage;
+
+		ret = of_property_read_u32(np, "bq25898s-charger,full_check_current",
+					   &pdata->full_check_current);
+		if (ret) {
+			pr_info("%s: bq25898s-charger,full_check_current is empty\n", __func__);
+			charger->full_check_current  = 128;
+		} else
+			charger->full_check_current = pdata->full_check_current;
 	}
 
 	return 0;
 }
 #endif
-
 static int bq25898s_charger_probe(struct i2c_client *client,
 		const struct i2c_device_id *id)
 {
@@ -489,18 +519,20 @@ static int bq25898s_charger_probe(struct i2c_client *client,
 	charger->pdata = pdata;
 	i2c_set_clientdata(client, charger);
 
+	charger->psy_chg.name           = "bq25898s-charger";
+	charger->psy_chg.type           = POWER_SUPPLY_TYPE_UNKNOWN;
+	charger->psy_chg.get_property   = bq25898s_chg_get_property;
+	charger->psy_chg.set_property   = bq25898s_chg_set_property;
+	charger->psy_chg.properties     = bq25898s_charger_props;
+	charger->psy_chg.num_properties = ARRAY_SIZE(bq25898s_charger_props);
 
-	charger->psy_chg.name		= "bq25898s-charger";
-	charger->psy_chg.type		= POWER_SUPPLY_TYPE_UNKNOWN;
-	charger->psy_chg.get_property	= bq25898s_chg_get_property;
-	charger->psy_chg.set_property	= bq25898s_chg_set_property;
-	charger->psy_chg.properties	= bq25898s_charger_props;
-	charger->psy_chg.num_properties	= ARRAY_SIZE(bq25898s_charger_props);
-
-	charger->cable_type = POWER_SUPPLY_TYPE_BATTERY;
+	charger->cable_type = SEC_BATTERY_CABLE_NONE;
 	bq25898s_charger_initialize(charger);
+	charger->input_current = bq25898s_get_input_current(charger);
+	charger->charging_current = bq25898s_get_charge_current(charger);
+	pr_info("%s: input: %d, charging: %d\n", __func__, charger->input_current, charger->charging_current);
 
-	ret = power_supply_register(&client->dev, &charger->psy_chg);
+	ret = power_supply_register(charger->dev, &charger->psy_chg);
 	if (ret) {
 		pr_err("%s: Failed to Register psy_chg\n", __func__);
 		goto err_data_free;
@@ -524,6 +556,7 @@ static int bq25898s_charger_probe(struct i2c_client *client,
 		dev_info(&client->dev,
 			"%s: sysfs_create_group failed\n", __func__);
 	}
+	charger->size = BQ25898S_CHG_REG_14;
 	pr_info("%s: bq25898s Charger Driver Loaded\n", __func__);
 
 	return 0;
@@ -586,8 +619,7 @@ static int bq25898s_charger_remove(struct i2c_client *client)
 #if defined CONFIG_PM
 static int bq25898s_charger_suspend(struct device *dev)
 {
-	struct i2c_client *i2c = container_of(dev, struct i2c_client, dev);
-	struct bq25898s_charger *charger = i2c_get_clientdata(i2c);
+	struct bq25898s_charger *charger = dev_get_drvdata(dev);
 	if (charger->chg_irq) {
 		if (device_may_wakeup(dev))
 			enable_irq_wake(charger->chg_irq);
@@ -598,8 +630,7 @@ static int bq25898s_charger_suspend(struct device *dev)
 
 static int bq25898s_charger_resume(struct device *dev)
 {
-	struct i2c_client *i2c = container_of(dev, struct i2c_client, dev);
-	struct bq25898s_charger *charger = i2c_get_clientdata(i2c);
+	struct bq25898s_charger *charger = dev_get_drvdata(dev);
 	if (charger->chg_irq) {
 		if (device_may_wakeup(dev))
 			disable_irq_wake(charger->chg_irq);

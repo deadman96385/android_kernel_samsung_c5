@@ -55,4 +55,3 @@ struct rt5665_platform_data {
 
 #endif
 
-

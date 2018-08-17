@@ -69,10 +69,12 @@
 #define CLUSTER_16(x)	((u16)((x) & 0xFFFFU))
 #define CLUSTER_32(x)	((u32)((x) & 0xFFFFFFFFU))
 #define CLUS_EOF	CLUSTER_32(~0)
+#define CLUS_BAD	(0xFFFFFFF7U)
 #define CLUS_FREE	(0)
 #define CLUS_BASE	(2)
-#define IS_CLUS_EOF(x)	(x == CLUS_EOF)
-#define IS_CLUS_FREE(x)	(x == CLUS_FREE)
+#define IS_CLUS_EOF(x)	((x) == CLUS_EOF)
+#define IS_CLUS_BAD(x)	((x) == CLUS_BAD)
+#define IS_CLUS_FREE(x)	((x) == CLUS_FREE)
 #define IS_LAST_SECT_IN_CLUS(fsi, sec)				\
 	((((sec) - (fsi)->data_start_sector + 1)		\
 	& ((1 << (fsi)->sect_per_clus_bits) - 1)) == 0)
@@ -193,7 +195,7 @@ struct sdfat_sb_info {
 struct sdfat_inode_info {
 	FILE_ID_T fid;
 	char  *target;
-	/* NOTE: i_size_ondisk is 64bits, so must hold ->i_mutex to access */
+	/* NOTE: i_size_ondisk is 64bits, so must hold ->inode_lock to access */
 	loff_t i_size_ondisk;         /* physically allocated size */
 	loff_t i_size_aligned;          /* block-aligned i_size (used in cont_write_begin) */
 	loff_t i_pos;               /* on-disk position of directory entry or 0 */
@@ -292,6 +294,31 @@ static inline void sdfat_save_attr(struct inode *inode, u32 attr)
 	else
 		SDFAT_I(inode)->fid.attr = attr & (ATTR_RWMASK | ATTR_READONLY);
 }
+
+/* sdfat/statistics.c */
+/* bigdata function */
+#ifdef CONFIG_SDFAT_STATISTICS
+extern int sdfat_statistics_init(struct kset *sdfat_kset);
+extern void sdfat_statistics_uninit(void);
+extern void sdfat_statistics_set_mnt(FS_INFO_T *fsi);
+extern void sdfat_statistics_set_mkdir(u8 flags);
+extern void sdfat_statistics_set_create(u8 flags);
+extern void sdfat_statistics_set_rw(u8 flags, u32 clu_offset, s32 create);
+extern void sdfat_statistics_set_trunc(u8 flags, CHAIN_T *clu);
+extern void sdfat_statistics_set_vol_size(struct super_block *sb);
+#else
+static inline int sdfat_statistics_init(struct kset *sdfat_kset)
+{
+	return 0;
+}
+static inline void sdfat_statistics_uninit(void) {};
+static inline void sdfat_statistics_set_mnt(FS_INFO_T *fsi) {};
+static inline void sdfat_statistics_set_mkdir(u8 flags) {};
+static inline void sdfat_statistics_set_create(u8 flags) {};
+static inline void sdfat_statistics_set_rw(u8 flags, u32 clu_offset, s32 create) {};
+static inline void sdfat_statistics_set_trunc(u8 flags, CHAIN_T *clu) {};
+static inline void sdfat_statistics_set_vol_size(struct super_block *sb) {};
+#endif
 
 /* sdfat/nls.c */
 /* NLS management function */

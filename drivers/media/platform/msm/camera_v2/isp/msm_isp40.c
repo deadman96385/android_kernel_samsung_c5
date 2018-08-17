@@ -432,6 +432,7 @@ static void msm_vfe40_init_hardware_reg(struct vfe_device *vfe_dev)
 		break;
 	case VFE40_8937_VERSION:
 	case VFE40_8953_VERSION:
+	case VFE40_8917_VERSION:
 		vfe_dev->is_camif_raw_crop_supported = 1;
 		break;
 	default:
@@ -735,8 +736,8 @@ static void msm_vfe40_process_reg_update(struct vfe_device *vfe_dev,
 				(uint32_t)BIT(i));
 			switch (i) {
 			case VFE_PIX_0:
-				msm_isp_save_framedrop_values(vfe_dev,
-					VFE_PIX_0);
+				/*msm_isp_save_framedrop_values(vfe_dev,
+					VFE_PIX_0);*/
 				msm_isp_notify(vfe_dev, ISP_EVENT_REG_UPDATE,
 					VFE_PIX_0, ts);
 				if (atomic_read(
@@ -766,6 +767,7 @@ static void msm_vfe40_process_reg_update(struct vfe_device *vfe_dev,
 			}
 			if (vfe_dev->axi_data.stream_update[i])
 				msm_isp_axi_stream_update(vfe_dev, i);
+			msm_isp_save_framedrop_values(vfe_dev, i);
 			if (atomic_read(&vfe_dev->axi_data.axi_cfg_update[i])) {
 				msm_isp_axi_cfg_update(vfe_dev, i);
 				if (atomic_read(
@@ -1577,6 +1579,7 @@ static void msm_vfe40_axi_cfg_wm_reg(
 		wm_bit_shift = VFE40_WM_BIT_SHIFT;
 	} else if (vfe_dev->vfe_hw_version == VFE40_8976_VERSION ||
 		vfe_dev->vfe_hw_version == VFE40_8937_VERSION ||
+		vfe_dev->vfe_hw_version == VFE40_8917_VERSION ||
 		vfe_dev->vfe_hw_version == VFE40_8953_VERSION) {
 		burst_len = VFE40_BURST_LEN_8952_VERSION;
 		wm_bit_shift = VFE40_WM_BIT_SHIFT_8976_VERSION;
@@ -1836,6 +1839,9 @@ static int msm_vfe40_axi_halt(struct vfe_device *vfe_dev,
 {
 	int rc = 0;
 	enum msm_vfe_input_src i;
+	pr_err("%s: vfe%d irq_mask0 %08x irq_mask1 %08x\n", __func__, vfe_dev->pdev->id,
+        vfe_dev->error_info.overflow_recover_irq_mask0,
+        vfe_dev->error_info.overflow_recover_irq_mask1);
 
 	/* Keep only halt and restart mask */
 	msm_camera_io_w(BIT(31), vfe_dev->vfe_base + 0x28);
@@ -1890,6 +1896,15 @@ static int msm_vfe40_axi_restart(struct vfe_device *vfe_dev,
 	uint32_t blocking, uint32_t enable_camif)
 {
 	vfe_dev->hw_info->vfe_ops.core_ops.restore_irq_mask(vfe_dev);
+	pr_err("%s vfe%d at_halt_irq0_mask %08x (%x, %d), at_halt_irq1_mask %08x (%x, %d)\n",
+    __func__, vfe_dev->pdev->id,
+        (unsigned)vfe_dev->error_info.overflow_recover_irq_mask0,
+        (unsigned)vfe_dev->error_info.overflow_recover_irq_mask0,
+        (int)vfe_dev->error_info.overflow_recover_irq_mask0,
+        (unsigned)vfe_dev->error_info.overflow_recover_irq_mask1,
+        (unsigned)vfe_dev->error_info.overflow_recover_irq_mask1,
+        (int)vfe_dev->error_info.overflow_recover_irq_mask1);
+
 	/* Clear IRQ Status */
 	msm_camera_io_w(0x7FFFFFFF, vfe_dev->vfe_base + 0x30);
 	msm_camera_io_w(0xFEFFFEFF, vfe_dev->vfe_base + 0x34);
@@ -2087,6 +2102,7 @@ static void msm_vfe40_stats_cfg_ub(struct vfe_device *vfe_dev)
 	if (vfe_dev->vfe_hw_version == VFE40_8916_VERSION ||
 		vfe_dev->vfe_hw_version == VFE40_8939_VERSION ||
 		vfe_dev->vfe_hw_version == VFE40_8937_VERSION ||
+		vfe_dev->vfe_hw_version == VFE40_8917_VERSION ||
 		vfe_dev->vfe_hw_version == VFE40_8953_VERSION) {
 		stats_burst_len = VFE40_STATS_BURST_LEN_8916_VERSION;
 		ub_offset = VFE40_UB_SIZE_8916;

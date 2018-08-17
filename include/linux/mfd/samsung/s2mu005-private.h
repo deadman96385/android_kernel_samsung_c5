@@ -24,9 +24,6 @@
 
 #include <linux/i2c.h>
 
-//#include <linux/battery/charger/s2mu005_charger.h>
-//#include <linux/battery/fuelgauge/s2mu005_fuelgauge.h>
-
 #define S2MU005_I2C_ADDR		(0x7A)
 #define S2MU005_REG_INVALID		(0xff)
 

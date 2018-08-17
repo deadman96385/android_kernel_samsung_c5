@@ -424,8 +424,8 @@ static unsigned char _calc_FASTCHG_current_offset_to_mA(unsigned short mA)
 {
 	unsigned char offset;
 
-	if (mA < 100) {
-		offset = 0x00;
+	if (mA < 200) {
+		offset = 0x02;
 	} else {
 		mA = (mA > 3250) ? 3250 : mA;
 		offset = ((mA - 100) / 50) & 0x3F;
@@ -854,7 +854,6 @@ static int sm5705_chg_set_property(struct power_supply *psy,
 {
 	struct sm5705_charger_data *charger =
 		container_of(psy, struct sm5705_charger_data, psy_chg);
-	int buck_state = ENABLE;
 	unsigned int prev_cable_type = charger->cable_type;;
 
 	switch (psp) {
@@ -929,7 +928,6 @@ static int sm5705_chg_set_property(struct power_supply *psy,
 		charger->charge_mode = val->intval;
 		switch (charger->charge_mode) {
 		case SEC_BAT_CHG_MODE_BUCK_OFF:
-			buck_state = DISABLE;
 		case SEC_BAT_CHG_MODE_CHARGING_OFF:
 			charger->is_charging = false;
 			break;
@@ -1745,7 +1743,6 @@ static sec_charger_platform_data_t *_get_sm5705_charger_platform_data
 	}
 #else
 	struct sm5705_platform_data *sm5705_pdata = dev_get_platdata(sm5705->dev);
-	struct sm5705_dev *sm5705 = dev_get_drvdata(pdev->dev.parent);
 	sec_charger_platform_data_t *pdata;
 
 	pdata = sm5705_pdata->charger_data;
@@ -1885,7 +1882,6 @@ static void sm5705_charger_initialize(struct sm5705_charger_data *charger)
 static int sm5705_charger_probe(struct platform_device *pdev)
 {
 	struct sm5705_dev *sm5705 = dev_get_drvdata(pdev->dev.parent);
-	struct sm5705_platform_data *pdata = dev_get_platdata(sm5705->dev);
 	struct sm5705_charger_data *charger;
 	int ret = 0;
 
@@ -1995,9 +1991,7 @@ err_power_supply_register_chg:
 	power_supply_unregister(&charger->psy_chg);
 err_power_supply_register:
 	destroy_workqueue(charger->wqueue);
-#ifdef CONFIG_OF
-	kfree(pdata->charger_data);
-#endif
+
 	mutex_destroy(&charger->charger_mutex);
 err_free:
 	kfree(charger);

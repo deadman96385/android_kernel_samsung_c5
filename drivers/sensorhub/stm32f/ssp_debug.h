@@ -16,9 +16,8 @@
 #ifndef __SSP_DEBUG_H__
 #define __SSP_DEBUG_H__
 
-#if CONFIG_SEC_DEBUG
-//#include <linux/qcom/sec_debug.h>
-#include <linux/sec_debug.h>
+#ifdef CONFIG_SEC_DEBUG
+#include <linux/qcom/sec_debug.h>
 #endif
 #include <linux/fs.h>
 #include "ssp.h"

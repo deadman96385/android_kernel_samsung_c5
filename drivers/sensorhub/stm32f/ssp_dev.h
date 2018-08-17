@@ -21,7 +21,7 @@
 #include <linux/of_gpio.h>
 #endif
 #if CONFIG_SEC_DEBUG
-#include <linux/sec_debug.h>
+#include <linux/qcom/sec_debug.h>
 #endif
 
 /* ssp mcu device ID */

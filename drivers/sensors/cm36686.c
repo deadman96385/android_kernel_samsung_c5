@@ -34,8 +34,12 @@
 #include <linux/of_gpio.h>
 #include <linux/regulator/consumer.h>
 #include "cm36686.h"
-
 #include <linux/sensor/sensors_core.h>
+
+#ifdef TAG
+#undef TAG
+#define TAG "[PROX]"
+#endif
 
 /* For debugging */
 #define	cm36686_DEBUG

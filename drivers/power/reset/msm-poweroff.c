@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -183,6 +183,7 @@ static void enable_emergency_dload_mode(void)
 		pr_err("Failed to set secure EDLOAD mode: %d\n", ret);
 }
 #endif
+
 static int dload_set(const char *val, struct kernel_param *kp)
 {
 	int ret;
@@ -297,7 +298,8 @@ static void msm_restart_prepare(const char *cmd)
 			need_warm_reset = true;
 	} else {
 		need_warm_reset = (get_dload_mode() ||
-				(cmd != NULL && cmd[0] != '\0'));
+				((cmd != NULL && cmd[0] != '\0') &&
+				strcmp(cmd, "userrequested")));
 	}
 
 	/* Hard reset the PMIC unless memory contents must be maintained. */
@@ -332,6 +334,16 @@ static void msm_restart_prepare(const char *cmd)
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_KEYS_CLEAR);
 			__raw_writel(0x7766550a, restart_reason);
+#ifdef CONFIG_SEC_PERIPHERAL_SECURE_CHK
+		} else if (!strcmp(cmd, "peripheral_hw_reset")) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_SECURE_CHECK_FAIL);
+			__raw_writel(0x7766550f, restart_reason);
+#endif
+		} else if (!strncmp(cmd, "cross_fail", 10)) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_CROSS_FAIL);
+			__raw_writel(0x7766550c, restart_reason);
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			int ret;

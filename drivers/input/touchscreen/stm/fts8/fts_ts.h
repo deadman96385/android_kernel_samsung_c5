@@ -14,7 +14,7 @@
 #define USE_OPEN_CLOSE
 #define SEC_TSP_FACTORY_TEST
 #define PAT_CONTROL
-#undef USE_POR_AFTER_I2C_RETRY
+#define USE_POR_AFTER_I2C_RETRY
 
 #define BRUSH_Z_DATA		63	/* for ArtCanvas */
 
@@ -204,6 +204,9 @@
 #define FTS_MODE_AOD					(1 << 2)
 #define FTS_MODE_PRESSURE					(1 << 6)
 
+#define FTS_BOOT_CRC_OKAY			0
+#define FTS_BOOT_CRC_FAIL			1
+
 #ifdef PAT_CONTROL
 /*---------------------------------------
 	<<< apply to server >>>
@@ -228,6 +231,12 @@
 #define PAT_EXT_FACT			0xE0
 #define PAT_MAX_EXT 			0xF5
 #endif
+
+enum fts_factory_mode {
+	FTS_NOT_FACTORY_MODE = 0,
+	FTS_FACTORY_PRETEST_UNIT_MODE,
+	FTS_FACTORY_PRETEST_ASSY_MODE,
+};
 
 #ifdef FTS_SUPPORT_TOUCH_KEY
 /* TSP Key Feature*/
@@ -313,8 +322,7 @@ struct fts_finger {
 
 enum tsp_power_mode {
 	FTS_POWER_STATE_POWERDOWN = 0,
-	FTS_POWER_STATE_LOWPOWER_SUSPEND,
-	FTS_POWER_STATE_LOWPOWER_RESUME,
+	FTS_POWER_STATE_LOWPOWER,
 	FTS_POWER_STATE_ACTIVE,
 };
 
@@ -462,8 +470,8 @@ struct fts_i2c_platform_data {
 	void (*enable_sync)(bool on);
 	unsigned char (*get_ddi_type)(void);	/* to indentify ddi type */
 
-	int tsp_icid;	/* IC Vendor */
-	int tsp_id;	/* Panel Vendor */
+	int tsp_id1;
+	int tsp_id2;
 	int device_id;	/* Device id */
 
 	int irq_gpio;	/* Interrupt GPIO */
@@ -529,7 +537,7 @@ struct fts_ts_info {
 	bool deepsleep_mode;
 	bool wirelesscharger_mode;
 	bool wet_mode;
-	int fts_power_state;
+	volatile int fts_power_state;
 	int wakeful_edge_side;
 	struct completion resume_done;
 	struct wake_lock wakelock;
@@ -608,7 +616,6 @@ struct fts_ts_info {
 #endif
 	struct mutex i2c_mutex;
 	struct mutex device_mutex;
-	bool touch_stopped;
 	bool reinit_done;
 
 	unsigned char data[FTS_EVENT_SIZE * FTS_FIFO_MAX];
@@ -618,7 +625,9 @@ struct fts_ts_info {
 
 	unsigned char cal_count;		/* calibration count   		- pat_control */
 	unsigned short tune_fix_ver;	/* calibration version which f/w based on  - pat_control */
+	int factory_mode;
 	bool external_factory;
+	bool set_protection_disable;
 
 	u8 grip_edgehandler_direction;
 	int grip_edgehandler_start_y;
@@ -630,6 +639,9 @@ struct fts_ts_info {
 	u8 grip_landscape_mode;
 	int grip_landscape_edge;
 	u16 grip_landscape_deadzone;
+
+	unsigned int boot_crc_check_fail;
+	unsigned char nv_crc_fail_count;
 
 	short pressure_left;
 	short pressure_center;
@@ -643,7 +655,6 @@ struct fts_ts_info {
 	unsigned int wet_count;
 	unsigned int dive_count;
 	unsigned int comm_err_count;
-	unsigned int checksum_result;
 	unsigned int all_finger_count;
 	unsigned int all_force_count;
 	unsigned int all_aod_tap_count;
@@ -694,11 +705,12 @@ int set_nvm_data(struct fts_ts_info *info, unsigned char type, unsigned char *bu
 int get_nvm_data(struct fts_ts_info *info, int type, unsigned char *nvdata);
 #ifdef FTS_SUPPORT_PRESSURE_SENSOR
 int fts_read_pressure_data(struct fts_ts_info *info);
-int fts_set_pressure_calibration_information(struct fts_ts_info *info, unsigned char base, unsigned char delta);
-int fts_get_pressure_calibration_information(struct fts_ts_info *info);
+int fts_set_factory_debug_information(struct fts_ts_info *info, unsigned char base, unsigned char delta, unsigned char checksum);
+int fts_get_factory_debug_information(struct fts_ts_info *info);
 #endif
 
 int fts_panel_ito_test(struct fts_ts_info *info);
+void fts_check_pure_autotune(struct fts_ts_info *info);
 
 #ifndef CONFIG_SEC_SYSFS
 extern struct class *sec_class;
@@ -726,5 +738,7 @@ extern int haptic_homekey_release(void);
 
 extern void fts_set_grip_data_to_ic(struct fts_ts_info *info, u8 flag);
 extern void fts_set_grip_type(struct fts_ts_info *info, u8 set_type);
+void fts_reinit(struct fts_ts_info *info);
+int fts_set_warmboot_crc_enable(struct fts_ts_info *info);
 
 #endif /* _LINUX_FTS_TS_H_ */

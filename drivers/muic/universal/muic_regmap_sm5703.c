@@ -369,7 +369,9 @@ static int sm5703_run_chgdet(struct regmap_desc *pdesc, bool started)
 	int attr, value, ret;
 
 	pr_info("%s: start. %s\n", __func__, started ? "enabled": "disabled");
-
+#if defined(CONFIG_SEC_FACTORY)
+	mdelay(300);
+#endif
 	attr = MANSW1_DM_CON_SW;
 	value = 0;
 	ret = regmap_write_value(pdesc, attr, value);

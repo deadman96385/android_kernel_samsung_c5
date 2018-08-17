@@ -33,6 +33,7 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
 #define SS_DSI_PANEL_MAGNA_EA8061S_SDC__H
 
 #include "../ss_dsi_panel_common.h"
+#define LCD_DEFAULT_BL_LEVEL 128
 
 struct smartdim_conf *smart_get_conf_EA8061S_AMS498QV01(void);
 #endif

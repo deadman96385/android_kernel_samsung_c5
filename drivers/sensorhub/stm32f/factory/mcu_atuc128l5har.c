@@ -25,7 +25,8 @@ ssize_t mcu_revision_show(struct device *dev,
 {
 	struct ssp_data *data = dev_get_drvdata(dev);
 
-	return sprintf(buf, "ST01%u,ST01%u\n", data->curr_fw_rev, get_module_rev(data));
+	return sprintf(buf, "ST01%u,ST01%u\n", data->curr_fw_rev,
+		get_module_rev(data));
 }
 
 ssize_t mcu_model_name_show(struct device *dev,
@@ -258,8 +259,8 @@ exit:
 		"[SSP] mag %d,%d,%d\n"
 		"[SSP] baro %d,%d\n"
 		"[SSP] prox %u,%u\n"
-		"[SSP] light %u,%u,%u,%u,%u,%u"
-		"[SSP]: temp %d,%d,%d\n",
+		"[SSP] light %u,%u,%u,%u,%u,%u\n"
+		"[SSP] temp %d,%d,%d",
 		fsb[SENSOR_TYPE_ACCELEROMETER].x, fsb[SENSOR_TYPE_ACCELEROMETER].y,
 		fsb[SENSOR_TYPE_ACCELEROMETER].z, fsb[SENSOR_TYPE_GYROSCOPE].x,
 		fsb[SENSOR_TYPE_GYROSCOPE].y, fsb[SENSOR_TYPE_GYROSCOPE].z,

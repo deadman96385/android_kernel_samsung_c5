@@ -191,7 +191,7 @@ int of_muic_dt(struct i2c_client *i2c, struct muic_platform_data *pdata)
 	muic_data_t *pmuic = i2c_get_clientdata(i2c);
 	int ret=0;
 #if defined(CONFIG_MUIC_UNIVERSAL_MULTI_SUPPORT) || defined(CONFIG_MUIC_UNIVERSAL_SM5705_AFC)
-	int temp = 0;
+	int temp;
 #endif
 #ifdef CONFIG_MUIC_SM570X_SWITCH_CONTROL_GPIO
 	int sm570x_switch_gpio;

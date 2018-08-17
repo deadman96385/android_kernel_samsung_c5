@@ -101,6 +101,7 @@ extern int poweroff_charging;
 #define TC305K_GRIP_RAW_DATA		0x0A
 #define TC305K_GRIP_BASELINE		0x0C
 #define TC305K_GRIP_TOTAL_CAP		0x0E
+#define TC305K_GRIP_REF_CAP		0x70
 
 #define TC305K_1GRIP			0x30
 #define TC305K_2GRIP			0x40
@@ -336,7 +337,7 @@ enum {
 	I_STATE_OFF_I2C,
 };
 
-//static bool tc300k_power_enabled;
+static bool tc300k_power_enabled;
 static bool tc300k_keyled_enabled;
 const char *regulator_ic;
 const char *regulator_led;
@@ -488,7 +489,7 @@ static void tc300k_release_all_fingers(struct tc300k_data *data)
 	struct i2c_client *client = data->client;
 	int i;
 
-	input_info(true, &client->dev, "%s\n", __func__);
+	input_dbg(true, &client->dev, "%s\n", __func__);
 
 	for (i = 0; i < data->key_num ; i++) {
 		input_report_key(data->input_dev,
@@ -661,7 +662,6 @@ static int tc300k_parse_dt(struct device *dev,
 	pdata->gpio_scl = of_get_named_gpio_flags(np, "coreriver,scl-gpio", 0, &pdata->scl_gpio_flags);
 	pdata->gpio_sda = of_get_named_gpio_flags(np, "coreriver,sda-gpio", 0, &pdata->sda_gpio_flags);
 	pdata->gpio_int = of_get_named_gpio_flags(np, "coreriver,irq-gpio", 0, &pdata->irq_gpio_flags);
-	pdata->gpio_en  = of_get_named_gpio_flags(np, "coreriver,tkey_en-gpio", 0, &pdata->irq_gpio_flags);
 
 	pdata->boot_on_ldo = of_property_read_bool(np, "coreriver,boot-on-ldo");
 
@@ -682,7 +682,7 @@ static int tc300k_parse_dt(struct device *dev,
 
 	if (of_property_read_string(np, "coreriver,regulator_ic", &pdata->regulator_ic)) {
 		input_err(true, dev, "%s Failed to get regulator_ic name property\n",__func__);
-		//return -EINVAL;
+		return -EINVAL;
 	}
 	regulator_ic = pdata->regulator_ic;
 
@@ -709,7 +709,7 @@ static int tc300k_parse_dt(struct device *dev,
 		input_info(true, dev, "%s Failed to get tsk_ic_num, TSK IC is TC300K\n", __func__);
 	} else {
 		if (pdata->tsk_ic_num == TC350K_TSK_IC)
-			pr_info("[TK] %s TSK IC is TC350K_TSK_IC[%d]\n", __func__, pdata->tsk_ic_num);
+			input_info(true, dev, "%s TSK IC is TC350K_TSK_IC[%d]\n", __func__, pdata->tsk_ic_num);
 		else
 			input_err(true, dev, "%s TSK IC is unknown![%d]\n", __func__, pdata->tsk_ic_num);
 	}
@@ -729,16 +729,16 @@ int tc300k_touchkey_power(void *info, bool on)
 {
 	struct tc300k_data *data = (struct tc300k_data *)info;
 	struct i2c_client *client = data->client;
-//	struct regulator *regulator;
-//	int ret = 0;
+	struct regulator *regulator;
+	int ret = 0;
 
-//	if (tc300k_power_enabled == on)
-//		return 0;
+	if (tc300k_power_enabled == on)
+		return 0;
 
 	input_info(true, &client->dev, "%s %s\n",
 		__func__, on ? "on" : "off");
 
-/*	regulator = regulator_get(NULL, regulator_ic);
+	regulator = regulator_get(NULL, regulator_ic);
 	if (IS_ERR(regulator)){
 		input_err(true, &client->dev, "%s: regulator_ic get failed\n", __func__);
 		return -EIO;
@@ -760,9 +760,9 @@ int tc300k_touchkey_power(void *info, bool on)
 		else
 			regulator_force_disable(regulator);
 	}
-	regulator_put(regulator);			*/		
+	regulator_put(regulator);
 
-	gpio_direction_output(data->pdata->gpio_en, on);
+	tc300k_power_enabled = on;
 
 	return 0;
 }
@@ -1088,7 +1088,7 @@ static ssize_t debug_c1_show(struct device *dev,
 	int ret;
 
 	if ((!data->enabled) || data->fw_downloding) {
-		dev_err(&client->dev, "[TK] can't excute %s\n", __func__);
+		input_err(true, &client->dev, "can't excute %s\n", __func__);
 		return -EPERM;
 	}
 
@@ -1618,7 +1618,6 @@ static int tc300k_crc_check(struct tc300k_data *data)
 {
 	struct i2c_client *client = data->client;
 	int ret;
-	u16 checksum;
 	u8 cmd;
 	u8 checksum_h, checksum_l;
 
@@ -1652,16 +1651,16 @@ static int tc300k_crc_check(struct tc300k_data *data)
 	}
 	checksum_l = ret;
 
-	checksum = (checksum_h << 8) | checksum_l;
+	data->checksum = (checksum_h << 8) | checksum_l;
 
-	if (data->fw_img->checksum != checksum) {
+	if (data->fw_img->checksum != data->checksum) {
 		input_err(true, &client->dev, 
 			"%s checksum fail - firm checksum(%d), compute checksum(%d)\n",
-			__func__, data->fw_img->checksum, checksum);
+			__func__, data->fw_img->checksum, data->checksum);
 		return -1;
 	}
 
-	input_info(true, &client->dev, "%s success (%d)\n", __func__, checksum);
+	input_info(true, &client->dev, "%s success (%d)\n", __func__, data->checksum);
 
 	return 0;
 }
@@ -1676,7 +1675,7 @@ static int tc300k_fw_update(struct tc300k_data *data, u8 fw_path, bool force)
 		ret = load_fw_in_kernel(data);
 		if (ret)
 			return -1;
-		
+
 		data->fw_ver_bin = data->fw_img->first_fw_ver;
 		data->md_ver_bin = data->fw_img->second_fw_ver;
 
@@ -2730,30 +2729,48 @@ static ssize_t touchkey_total_cap1_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct tc300k_data *data = dev_get_drvdata(dev);
+	struct i2c_client *client = data->client;
 	int ret;
 
-	ret = read_tc350k_register_data(data, TC305K_1GRIP, TC305K_GRIP_TOTAL_CAP);
+	ret = i2c_smbus_read_byte_data(client, TC305K_1GRIP + TC305K_GRIP_TOTAL_CAP);
 	if (ret < 0) {
 		input_err(true, &data->client->dev, "%s fail(%d)\n", __func__, ret);
 		return sprintf(buf, "%d\n", 0);
 	}
 
-	return sprintf(buf, "%d\n", ret / 100);
+	return sprintf(buf, "%d\n", ret);
 }
 
 static ssize_t touchkey_total_cap2_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct tc300k_data *data = dev_get_drvdata(dev);
+	struct i2c_client *client = data->client;
 	int ret;
 
-	ret = read_tc350k_register_data(data, TC305K_2GRIP, TC305K_GRIP_TOTAL_CAP);
+	ret = i2c_smbus_read_byte_data(client, TC305K_2GRIP + TC305K_GRIP_TOTAL_CAP);
 	if (ret < 0) {
 		input_err(true, &data->client->dev, "%s fail(%d)\n", __func__, ret);
 		return sprintf(buf, "%d\n", 0);
 	}
 
-	return sprintf(buf, "%d\n", ret / 100);
+	return sprintf(buf, "%d\n", ret);
+}
+
+static ssize_t touchkey_ref_cap_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct tc300k_data *data = dev_get_drvdata(dev);
+	struct i2c_client *client = data->client;
+	int ret;
+
+	ret = i2c_smbus_read_byte_data(client, TC305K_GRIP_REF_CAP);
+	if (ret < 0) {
+		input_err(true, &data->client->dev, "%s fail(%d)\n", __func__, ret);
+		return sprintf(buf, "%d\n", 0);
+	}
+
+	return sprintf(buf, "%d\n", ret);
 }
 
 static ssize_t touchkey_grip1_show(struct device *dev,
@@ -3052,6 +3069,17 @@ static ssize_t touchkey_chip_name(struct device *dev,
 	return sprintf(buf, "TC305K\n");
 }
 
+static ssize_t touchkey_crc_check_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct tc300k_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	ret = tc300k_crc_check(data);
+
+	return sprintf(buf, (ret == 0) ? "OK,%x\n" : "NG,%x\n", data->checksum);
+}
+
 static DEVICE_ATTR(touchkey_threshold, S_IRUGO, tc300k_threshold_show, NULL);
 static DEVICE_ATTR(brightness, S_IRUGO | S_IWUSR | S_IWGRP, NULL,
 		tc300k_led_control);
@@ -3140,8 +3168,10 @@ static DEVICE_ATTR(touchkey_grip_gain, S_IRUGO, touchkey_grip_gain_show, NULL);
 static DEVICE_ATTR(touchkey_grip_check, S_IRUGO, touchkey_grip_check_show, NULL);
 static DEVICE_ATTR(touchkey_sar_only_mode,  S_IWUSR | S_IWGRP, NULL, touchkey_mode_change);
 static DEVICE_ATTR(grip_irq_count, S_IRUGO | S_IWUSR | S_IWGRP, touchkey_grip_irq_count_show, touchkey_grip_irq_count_store);
+static DEVICE_ATTR(touchkey_ref_cap, S_IRUGO, touchkey_ref_cap_show, NULL);
 #endif
 static DEVICE_ATTR(touchkey_chip_name, S_IRUGO, touchkey_chip_name, NULL);
+static DEVICE_ATTR(touchkey_crc_check, S_IRUGO, touchkey_crc_check_show, NULL);
 
 static struct attribute *sec_touchkey_attributes[] = {
 	&dev_attr_touchkey_threshold.attr,
@@ -3196,8 +3226,10 @@ static struct attribute *sec_touchkey_attributes[] = {
 	&dev_attr_touchkey_grip_check.attr,
 	&dev_attr_touchkey_sar_only_mode.attr,
 	&dev_attr_grip_irq_count.attr,
+	&dev_attr_touchkey_ref_cap.attr,
 #endif
 	&dev_attr_touchkey_chip_name.attr,
+	&dev_attr_touchkey_crc_check.attr,
 	NULL,
 };
 
@@ -3273,8 +3305,10 @@ static struct attribute *sec_touchkey_attributes_350k[] = {
 	&dev_attr_touchkey_grip_check.attr,
 	&dev_attr_touchkey_sar_only_mode.attr,
 	&dev_attr_grip_irq_count.attr,
+	&dev_attr_touchkey_ref_cap.attr,
 #endif
 	&dev_attr_touchkey_chip_name.attr,
+	&dev_attr_touchkey_crc_check.attr,
 	NULL,
 };
 
@@ -3549,7 +3583,7 @@ static int tc300k_probe(struct i2c_client *client,
 
 	ret = tc300_pinctrl_init(data);
 	if (ret < 0) {
-		dev_err(&client->dev,
+		input_err(true, &client->dev,
 			"%s: Failed to init pinctrl: %d\n", __func__, ret);
 		goto err_platform_data;
 	}

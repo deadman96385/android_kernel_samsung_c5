@@ -117,7 +117,7 @@ static int msm_isp_stats_cfg_ping_pong_address(struct vfe_device *vfe_dev,
 					= buf;
 			}
 		}
-	} else if (!vfe_dev->is_split) {
+	} else {
 		if (buf)
 			vfe_dev->hw_info->vfe_ops.stats_ops.
 				update_ping_pong_addr(
@@ -201,7 +201,7 @@ static int32_t msm_isp_stats_buf_divert(struct vfe_device *vfe_dev,
 	if (rc < 0) {
 		if (rc == -EFAULT)
 			msm_isp_halt_send_error(vfe_dev,
-					ISP_EVENT_BUF_FATAL_ERROR);
+					ISP_EVENT_PING_PONG_MISMATCH);
 		pr_err("stats_buf_divert: update put buf cnt fail\n");
 		return rc;
 	}
@@ -288,8 +288,7 @@ static int32_t msm_isp_stats_configure(struct vfe_device *vfe_dev,
 		if (rc < 0) {
 			pr_err("%s:%d failed: stats buf divert rc %d\n",
 				__func__, __LINE__, rc);
-			if (0 == result)
-				result = rc;
+			result = rc;
 		}
 	}
 	if (is_composite && comp_stats_type_mask) {

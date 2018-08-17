@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2014-2016 The Linux Foundation. All rights reserved.
+* Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
 *
 * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
 *
@@ -280,7 +280,7 @@ static int wlan_send_sock_msg_to_app(tAniHdr *wmsg, int radio,
 	tAniNlHdr *wnl = NULL;
 	struct sk_buff *skb;
 	struct nlmsghdr *nlh;
-	int wmsg_length = wmsg->length;
+	int wmsg_length = ntohs(wmsg->length);
 	static int nlmsg_seq;
 
 	if (radio < 0 || radio > ANI_MAX_RADIOS) {
@@ -290,6 +290,7 @@ static int wlan_send_sock_msg_to_app(tAniHdr *wmsg, int radio,
 	}
 
 	payload_len = wmsg_length + sizeof(wnl->radio) + sizeof(tAniHdr);
+
 	tot_msg_len = NLMSG_SPACE(payload_len);
 	skb = dev_alloc_skb(tot_msg_len);
 	if (skb == NULL) {
@@ -738,8 +739,8 @@ static int send_fw_log_pkt_to_user(void)
 		msg_header.wmsg.length = skb->len;
 
 		if (unlikely(skb_headroom(skb) < sizeof(msg_header))) {
-			pr_err("VPKT [%d]: Insufficient headroom, head[%p],"
-				" data[%p], req[%zu]", __LINE__, skb->head,
+			pr_err("VPKT [%d]: Insufficient headroom, head[%pK],"
+				" data[%pK], req[%zu]", __LINE__, skb->head,
 				skb->data, sizeof(msg_header));
 			return -EIO;
 		}
@@ -834,8 +835,8 @@ static int send_data_mgmt_log_pkt_to_user(void)
 		msg_header.frameSize = WLAN_MGMT_LOGGING_FRAMESIZE_128BYTES;
 
 		if (unlikely(skb_headroom(skb) < sizeof(msg_header))) {
-			pr_err("VPKT [%d]: Insufficient headroom, head[%p],"
-				" data[%p], req[%zu]", __LINE__, skb->head,
+			pr_err("VPKT [%d]: Insufficient headroom, head[%pK],"
+				" data[%pK], req[%zu]", __LINE__, skb->head,
 				skb->data, sizeof(msg_header));
 			return -EIO;
 		}
@@ -1065,8 +1066,8 @@ static int send_per_pkt_stats_to_user(void)
 		pktlog.seq_no = gwlan_logging.pkt_stats_msg_idx++;
 
 		if (unlikely(skb_headroom(plog_msg->skb) < sizeof(vos_log_pktlog_info))) {
-			pr_err("VPKT [%d]: Insufficient headroom, head[%p],"
-				" data[%p], req[%zu]", __LINE__, plog_msg->skb->head,
+			pr_err("VPKT [%d]: Insufficient headroom, head[%pK],"
+				" data[%pK], req[%zu]", __LINE__, plog_msg->skb->head,
 				plog_msg->skb->data, sizeof(msg_header));
 			ret = -EIO;
 			free_old_skb = true;
@@ -1076,8 +1077,8 @@ static int send_per_pkt_stats_to_user(void)
 							sizeof(vos_log_pktlog_info));
 
 		if (unlikely(skb_headroom(plog_msg->skb) < sizeof(int))) {
-			pr_err("VPKT [%d]: Insufficient headroom, head[%p],"
-				" data[%p], req[%zu]", __LINE__, plog_msg->skb->head,
+			pr_err("VPKT [%d]: Insufficient headroom, head[%pK],"
+				" data[%pK], req[%zu]", __LINE__, plog_msg->skb->head,
 				plog_msg->skb->data, sizeof(int));
 			ret = -EIO;
 			free_old_skb = true;
@@ -1103,8 +1104,8 @@ static int send_per_pkt_stats_to_user(void)
 		msg_header.wmsg.length = cpu_to_be16(plog_msg->skb->len);
 
 		if (unlikely(skb_headroom(plog_msg->skb) < sizeof(msg_header))) {
-			pr_err("VPKT [%d]: Insufficient headroom, head[%p],"
-				" data[%p], req[%zu]", __LINE__, plog_msg->skb->head,
+			pr_err("VPKT [%d]: Insufficient headroom, head[%pK],"
+				" data[%pK], req[%zu]", __LINE__, plog_msg->skb->head,
 				plog_msg->skb->data, sizeof(msg_header));
 			ret = -EIO;
 			free_old_skb = true;
@@ -1275,7 +1276,7 @@ static int wlan_logging_proc_sock_rx_msg(struct sk_buff *skb)
 	tAniNlHdr *wnl;
 	int radio;
 	int type;
-	int ret;
+	int ret, len;
 	unsigned long flags;
 
         if (TRUE == vos_isUnloadInProgress())
@@ -1294,10 +1295,12 @@ static int wlan_logging_proc_sock_rx_msg(struct sk_buff *skb)
 		return -EINVAL;
 	}
 
-	if (wnl->wmsg.length > skb->data_len)
+	len = ntohs(wnl->wmsg.length) + sizeof(tAniNlHdr);
+
+	if (len > skb_headlen(skb))
 	{
-		pr_err("%s: invalid length msgLen:%x skb data_len:%x \n",
-		       __func__, wnl->wmsg.length, skb->data_len);
+		pr_err("%s: invalid length, msgLen:%x skb len:%x headLen: %d data_len: %d",
+		       __func__, len, skb->len, skb_headlen(skb), skb->data_len);
 		return -EINVAL;
 	}
 
@@ -2024,7 +2027,7 @@ size_t wlan_fwr_mem_dump_fsread_handler(char __user *buf,
 {
 	if (buf == NULL || gwlan_logging.fw_mem_dump_ctx.fw_dump_start_loc == NULL)
 	{
-		pr_err("%s : start loc : %p buf : %p ",__func__,gwlan_logging.fw_mem_dump_ctx.fw_dump_start_loc,buf);
+		pr_err("%s : start loc : %pK buf : %pK ",__func__,gwlan_logging.fw_mem_dump_ctx.fw_dump_start_loc,buf);
 		return 0;
 	}
 

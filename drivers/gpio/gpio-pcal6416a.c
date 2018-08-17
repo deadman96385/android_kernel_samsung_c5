@@ -34,11 +34,6 @@
 #endif
 #include <linux/i2c/pcal6416a.h>
 
-#define DRV_NAME	"pcal6416a-gpio"
-
-#define POWER_ON	1
-#define POWER_OFF	0
-
 struct pcal6416a_chip {
 	struct i2c_client *client;
 	struct gpio_chip gpio_chip;
@@ -59,12 +54,12 @@ struct pcal6416a_chip {
 	uint16_t reg_outputconfig;
 };
 
-struct pcal6416a_chip *g_dev = NULL;
+struct pcal6416a_chip *g_dev;
 
 /* read the 16-bit register from the PCAL6416A
-	 reg: register address
-   val: the value read back from the PCAL6416A
-*/
+reg: register address
+val: the value read back from the PCAL6416A
+ */
 static int pcal6416a_read_reg(struct pcal6416a_chip *chip, int reg, uint16_t *val)
 {
 	int ret = i2c_smbus_read_word_data(chip->client, reg);
@@ -80,9 +75,9 @@ static int pcal6416a_read_reg(struct pcal6416a_chip *chip, int reg, uint16_t *va
 }
 
 /* write a 16-bit value to the PCAL6416A
-	 reg: register address
-   val: the value read back from the PCAL6416A
-*/
+reg: register address
+val: the value read back from the PCAL6416A
+ */
 static int pcal6416a_write_reg(struct pcal6416a_chip *chip, int reg, uint16_t val)
 {
 	int ret = i2c_smbus_write_word_data(chip->client, reg, val);
@@ -97,9 +92,9 @@ static int pcal6416a_write_reg(struct pcal6416a_chip *chip, int reg, uint16_t va
 }
 
 /* read a port pin value (INPUT register) from the PCAL6416A
-   off: bit number (0..15)
-   return: bit value 0 or 1
-*/
+off: bit number (0..15)
+return: bit value 0 or 1
+ */
 static int pcal6416a_gpio_get_value(struct gpio_chip *gc, unsigned off)
 {
 	uint16_t reg_val;
@@ -120,12 +115,12 @@ static int pcal6416a_gpio_get_value(struct gpio_chip *gc, unsigned off)
 }
 
 /* write a port pin value (INPUT register) from the PCAL6416A
-   off: bit number (0..15)
-   val: 0 or 1
-   return: none
-*/
+off: bit number (0..15)
+val: 0 or 1
+return: none
+ */
 static void pcal6416a_gpio_set_value(struct gpio_chip *gc,
-					unsigned off, int val)
+		unsigned off, int val)
 {
 	struct pcal6416a_chip *chip
 		= container_of(gc, struct pcal6416a_chip, gpio_chip);
@@ -141,8 +136,8 @@ static void pcal6416a_gpio_set_value(struct gpio_chip *gc,
 }
 
 /* set the CONFIGURATION register of a port pin as an input
-   off: bit number (0..15)
-*/
+off: bit number (0..15)
+ */
 static int pcal6416a_gpio_direction_input(struct gpio_chip *gc, unsigned off)
 {
 	int ret;
@@ -159,12 +154,12 @@ static int pcal6416a_gpio_direction_input(struct gpio_chip *gc, unsigned off)
 }
 
 /* set the DIRECTION (CONFIGURATION register) of a port pin as an output
-   off: bit number (0..15)
-   val = 1 or 0
-   return: 0 if successful
-*/
+off: bit number (0..15)
+val = 1 or 0
+return: 0 if successful
+ */
 static int pcal6416a_gpio_direction_output(struct gpio_chip *gc,
-					unsigned off, int val)
+		unsigned off, int val)
 {
 	int ret;
 	struct pcal6416a_chip *chip
@@ -213,111 +208,6 @@ static void pcal6416a_gpio_free(struct gpio_chip *gc, unsigned off)
 	}
 	/* to do*/
 }
-
-#if !defined(CONFIG_ARM64) 
-int expander_gpio_config(unsigned config, unsigned disable)
-{
-	int ret;
-	unsigned min_gpio, max_gpio, offset;
-	unsigned gpio = GPIO_PIN(config);
-	unsigned dir = GPIO_DIR(config);
-	unsigned pull = GPIO_PULL(config);
-	unsigned drvstr = GPIO_DRVSTR(config);
-
-	min_gpio = g_dev->gpio_start;
-	max_gpio = g_dev->gpio_start + g_dev->gpio_chip.ngpio;
-
-	pr_info("[%s]config gpio [%d]\n", __func__, gpio);
-	if (!((min_gpio <= gpio) && (gpio < max_gpio)))
-		return -EINVAL;
-
-	offset = gpio-min_gpio;
-
-	if (dir) { /* output */
-		pcal6416a_gpio_direction_output(&g_dev->gpio_chip, offset, 0);
-	} else {
-		pcal6416a_gpio_direction_input(&g_dev->gpio_chip, offset);
-	}
-	switch (pull) { /* pull-up, pull-down, no-pull */
-	case GPIO_CFG_NO_PULL:
-		g_dev->reg_enpullupdown &= ~(1<<offset);
-		g_dev->reg_selpullupdown &= ~(1<<offset);
-		break;
-	case GPIO_CFG_PULL_DOWN:
-		g_dev->reg_enpullupdown |= (1<<offset);
-		g_dev->reg_selpullupdown &= ~(1<<offset);
-		break;
-	case GPIO_CFG_PULL_UP:
-		g_dev->reg_enpullupdown |= (1<<offset);
-		g_dev->reg_selpullupdown |= (1<<offset);
-		break;
-	default:
-		pr_err("Not support config - GPIO_CFG_KEEPER\n");
-		break;
-	}
-	ret = pcal6416a_write_reg(g_dev, PCAL6416A_EN_PULLUPDOWN,
-					g_dev->reg_enpullupdown);
-	if (ret < 0)
-		pr_err("failed set enable pullupdown\n");
-
-	ret = pcal6416a_write_reg(g_dev, PCAL6416A_SEL_PULLUPDOWN,
-					g_dev->reg_selpullupdown);
-	if (ret < 0)
-		pr_err("failed set select pull\n");
-
-	if (offset < 8) {	/* p0 ~ p7 */
-		switch (drvstr) {
-		case GPIO_CFG_6_25MA:
-			g_dev->reg_drive0 &= ~(0x3<<(offset*2));
-			break;
-		case GPIO_CFG_12_5MA:
-			g_dev->reg_drive0 &= ~(0x3<<(offset*2));
-			g_dev->reg_drive0 |= (0x1<<(offset*2));
-			break;
-		case GPIO_CFG_18_75MA:
-			g_dev->reg_drive0 &= ~(0x3<<(offset*2));
-			g_dev->reg_drive0 |= (0x2<<(offset*2));
-			break;
-		case GPIO_CFG_25MA:
-			g_dev->reg_drive0 |= (0x3<<(offset*2));
-			break;
-		default:
-			pr_err("Not support config - drive strength\n");
-			break;
-		}
-		ret = pcal6416a_write_reg(g_dev, PCAL6416A_DRIVE0,
-						g_dev->reg_drive0);
-		if (ret < 0)
-			pr_err("failed set drive0\n");
-	} else {
-		switch (drvstr) {
-		case GPIO_CFG_6_25MA:
-			g_dev->reg_drive1 &= ~(0x3<<((offset-8)*2));
-			break;
-		case GPIO_CFG_12_5MA:
-			g_dev->reg_drive1 &= ~(0x3<<((offset-8)*2));
-			g_dev->reg_drive1 |= (0x1<<((offset-8)*2));
-			break;
-		case GPIO_CFG_18_75MA:
-			g_dev->reg_drive1 &= ~(0x3<<((offset-8)*2));
-			g_dev->reg_drive1 |= (0x2<<((offset-8)*2));
-			break;
-		case GPIO_CFG_25MA:
-			g_dev->reg_drive1 |= (0x3<<((offset-8)*2));
-			break;
-		default:
-			pr_err("Not support config - drive strength\n");
-			break;
-		}
-		ret = pcal6416a_write_reg(g_dev, PCAL6416A_DRIVE1,
-						g_dev->reg_drive1);
-		if (ret < 0)
-			pr_err("failed set drive1\n");
-	}
-	return 0;
-}
-EXPORT_SYMBOL(expander_gpio_config);
-#endif
 
 static int pcal6416a_gpio_setup(struct pcal6416a_chip *dev)
 {
@@ -455,7 +345,7 @@ static int pcal6416a_parse_dt(struct device *dev,
 		ret = of_property_read_u32(np, "pcal6416a,config", (u32 *)&pdata->init_config);
 		if (ret < 0) {
 			pr_err("[%s]: Unable to read pcal6416a,support_init\n", __func__);
-			pdata->init_config= 0x0000;
+			pdata->init_config = 0x0000;
 		}
 		ret = of_property_read_u32(np, "pcal6416a,data_out", (u32 *)&pdata->init_data_out);
 		if (ret < 0) {
@@ -475,12 +365,10 @@ static int pcal6416a_parse_dt(struct device *dev,
 			if (((pull_reg>>(i*2))&0x3) == NO_PULL) {
 				pdata->init_en_pull &= ~(1<<i);
 				pdata->init_sel_pull &= ~(1<<i);
-			}
-			else if (((pull_reg>>(i*2))&0x3) == PULL_DOWN) {
+			} else if (((pull_reg>>(i*2))&0x3) == PULL_DOWN) {
 				pdata->init_en_pull |= (1<<i);
 				pdata->init_sel_pull &= ~(1<<i);
-			}
-			else if (((pull_reg>>(i*2))&0x3) == PULL_UP) {
+			} else if (((pull_reg>>(i*2))&0x3) == PULL_UP) {
 				pdata->init_en_pull |= (1<<i);
 				pdata->init_sel_pull |= (1<<i);
 			}
@@ -507,6 +395,9 @@ static void pcal6416a_power_ctrl(struct pcal6416a_platform_data *pdata, char ena
 {
 	int ret = 0;
 	struct regulator *reg_power = pdata->vdd;
+
+	//	reg_power = regulator_get(NULL, "pm8953_l5");
+	//	ret = regulator_set_voltage(reg_power, 1800000, 1800000);
 
 	if (enable) {
 		if (regulator_is_enabled(reg_power))
@@ -571,7 +462,6 @@ static int pcal6416a_reset_chip(struct pcal6416a_platform_data *pdata)
 	}
 	return 0;
 }
-struct device *pcal6416a_dev;
 
 static ssize_t store_pcal6416a_gpio_inout(struct device *dev,
 		struct device_attribute *devattr,
@@ -612,13 +502,12 @@ static ssize_t store_pcal6416a_gpio_inout(struct device *dev,
 		if (in_out == 'i') {
 			retval = gpio_direction_input(gpio_pcal6416a);
 			val = gpio_get_value(gpio_pcal6416a);
-		}
-		else
+		} else
 			retval = gpio_direction_output(gpio_pcal6416a, val);
 
 		if (retval)
 			pr_err("%s: unable to set direction for gpio [%d]\n",
-						__func__, gpio_pcal6416a);
+					__func__, gpio_pcal6416a);
 
 		gpio_free(gpio_pcal6416a);
 	}
@@ -643,9 +532,9 @@ static ssize_t show_pcal6416a_gpio_state(struct device *dev,
 	pcal6416a_read_reg(chip, PCAL6416A_DRIVE0, &chip_state.reg_drive0);
 	pcal6416a_read_reg(chip, PCAL6416A_DRIVE1, &chip_state.reg_drive1);
 	pcal6416a_read_reg(chip, PCAL6416A_EN_PULLUPDOWN,
-					&chip_state.reg_enpullupdown);
+			&chip_state.reg_enpullupdown);
 	pcal6416a_read_reg(chip, PCAL6416A_SEL_PULLUPDOWN,
-					&chip_state.reg_selpullupdown);
+			&chip_state.reg_selpullupdown);
 
 	for (i = 0; i < 16; i++) {
 		bufp += sprintf(bufp, "Expander[3%02d]", i);
@@ -668,7 +557,7 @@ static ssize_t show_pcal6416a_gpio_state(struct device *dev,
 			drv_str = (chip_state.reg_drive1>>((i-8)*2)) & 0x3;
 		else
 			drv_str = (chip_state.reg_drive0>>(i*2)) & 0x3;
-		switch(drv_str) {
+		switch (drv_str) {
 		case GPIO_CFG_6_25MA:
 			bufp += sprintf(bufp, " DRV_6.25mA");
 			break;
@@ -771,9 +660,9 @@ static int expander_show(struct seq_file *s, void *unused)
 	pcal6416a_read_reg(g_dev, PCAL6416A_DRIVE0, &chip_state.reg_drive0);
 	pcal6416a_read_reg(g_dev, PCAL6416A_DRIVE1, &chip_state.reg_drive1);
 	pcal6416a_read_reg(g_dev, PCAL6416A_EN_PULLUPDOWN,
-				&chip_state.reg_enpullupdown);
+			&chip_state.reg_enpullupdown);
 	pcal6416a_read_reg(g_dev, PCAL6416A_SEL_PULLUPDOWN,
-				&chip_state.reg_selpullupdown);
+			&chip_state.reg_selpullupdown);
 
 	for (i = 0; i < 16; i++) {
 		seq_printf(s, "Expander[3%02d]", i);
@@ -796,7 +685,7 @@ static int expander_show(struct seq_file *s, void *unused)
 			drv_str = (chip_state.reg_drive1>>((i-8)*2)) & 0x3;
 		else
 			drv_str = (chip_state.reg_drive0>>(i*2)) & 0x3;
-		switch(drv_str) {
+		switch (drv_str) {
 		case GPIO_CFG_6_25MA:
 			seq_printf(s, " DRV_6.25mA");
 			break;
@@ -831,7 +720,7 @@ static const struct file_operations expander_operations = {
 };
 
 static int pcal6416a_gpio_probe(struct i2c_client *client,
-					const struct i2c_device_id *id)
+		const struct i2c_device_id *id)
 {
 	struct device_node *np = client->dev.of_node;
 	struct pcal6416a_platform_data *pdata = NULL;
@@ -920,7 +809,7 @@ static int pcal6416a_gpio_probe(struct i2c_client *client,
 			ret = pcal6416a_gpio_setup(dev);
 			if (ret) {
 				dev_err(&client->dev,
-					"expander setup i2c retry [%d]\n", retry);
+						"expander setup i2c retry [%d]\n", retry);
 			} else {
 				pr_info("[%s]Expander setup success [%d]\n",
 						__func__, retry);
@@ -932,7 +821,7 @@ static int pcal6416a_gpio_probe(struct i2c_client *client,
 					"Failed to expander retry[%d]\n", retry);
 			panic("pcal6416a i2c fail, check HW!\n");
 			goto err;
-		
+
 		}
 		usleep_range(100, 200);
 	}
@@ -945,7 +834,7 @@ static int pcal6416a_gpio_probe(struct i2c_client *client,
 			gc->base, gc->base + gc->ngpio - 1,
 			client->name);
 
-	pcal6416a_dev = sec_device_create(0, dev, "expander");
+	pcal6416a_dev = sec_device_create(0, NULL, "expander");
 	if (IS_ERR(pcal6416a_dev)) {
 		dev_err(&client->dev,
 				"Failed to create device for expander\n");
@@ -985,7 +874,7 @@ err_debug_file:
 err_debug_dir:
 	sysfs_remove_file(&pcal6416a_dev->kobj, &dev_attr_expgpio.attr);
 err_destroy:
-	sec_device_destroy(0);
+	sec_device_destroy(pcal6416a_dev->devt);
 err:
 	pcal6416a_power_ctrl(pdata, POWER_OFF);
 	mutex_destroy(&dev->lock);
@@ -1020,11 +909,11 @@ MODULE_DEVICE_TABLE(i2c, pcal6416a_gpio_id);
 
 static struct i2c_driver pcal6416a_gpio_driver = {
 	.driver = {
-		   .name = DRV_NAME,
+		.name = DRV_NAME,
 #ifdef CONFIG_OF
-		   .of_match_table = of_match_ptr(pcal6416a_dt_ids),
+		.of_match_table = of_match_ptr(pcal6416a_dt_ids),
 #endif
-		   },
+	},
 	.probe = pcal6416a_gpio_probe,
 	.remove = pcal6416a_gpio_remove,
 	.id_table = pcal6416a_gpio_id,

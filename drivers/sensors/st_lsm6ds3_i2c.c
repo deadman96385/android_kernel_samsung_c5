@@ -39,9 +39,12 @@ static int st_lsm6ds3_i2c_read(struct st_lsm6ds3_transfer_buffer *tb,
 
 		if (ret < 0) {
 			cdata->err_count++;
-			SENSOR_ERR("i2c read = 0x%x, ret = %d\n", reg_addr, ret);
+			SENSOR_ERR("i2c read: 0x%x, ret: %d\n", reg_addr, ret);
+		} else {
+			cdata->err_count = 0;
 		}
 	} else {
+		SENSOR_ERR("skip i2c_read(): err_count %d\n", cdata->err_count);
 		ret = -1;
 	}
 
@@ -90,7 +93,7 @@ static int st_lsm6ds3_i2c_probe(struct i2c_client *client,
 		goto out_no_free;
 	}
 
-	cdata = kmalloc(sizeof(*cdata), GFP_KERNEL);
+	cdata = kzalloc(sizeof(*cdata), GFP_KERNEL);
 	if (!cdata)
 		return -ENOMEM;
 

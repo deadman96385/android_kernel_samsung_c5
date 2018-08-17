@@ -40,6 +40,11 @@
 #include <linux/sensor/sensors_core.h>
 #include "gp2ap070s.h"
 
+#ifdef TAG
+#undef TAG
+#define TAG "[PROX]"
+#endif
+
 #define I2C_M_WR        0 /* for i2c Write */
 
 #define DEFAULT_HIGH_THD 150
@@ -927,6 +932,9 @@ static ssize_t proximity_enable_store(struct device *dev,
 		ret = proximity_open_cancelation(data);
 		if (ret < 0 && ret != -ENOENT)
 			SENSOR_INFO("proximity_open_cancelation() failed\n");
+		ret = gp2a_set_data_offset(data, data->prox_offset);
+		if (ret < 0)
+			SENSOR_ERR("fail : set proximity offset(%d)\n", ret);
 #endif
 		gp2a_set_mode(data, ON);
 

@@ -45,13 +45,13 @@ extern void s2mm005_rprd_mode_change(struct s2mm005_data *usbpd_data, u8 mode);
 extern void s2mm005_manual_JIGON(struct s2mm005_data *usbpd_data, int mode);
 extern void s2mm005_manual_LPM(struct s2mm005_data *usbpd_data, int cmd);
 extern void s2mm005_control_option_command(struct s2mm005_data *usbpd_data, int cmd);
-#ifdef CONFIG_WATER_CHECK
-extern int check_water_state(void);
-#endif
+extern void s2mm005_set_upsm_mode(void);
+extern void s2mm005_set_cabletype_as_TA(void);
 ////////////////////////////////////////////////////////////////////////////////
 // external functions in s2mm005_cc.c
 ////////////////////////////////////////////////////////////////////////////////
 extern void process_cc_attach(void * data, u8 *plug_attach_done);
+extern void process_cc_detach(void * data);
 extern void process_cc_get_int_status(void *data, uint32_t *pPRT_MSG, MSG_IRQ_STATUS_Type *MSG_IRQ_State);
 extern void process_cc_rid(void * data);
 extern void ccic_event_work(void *data, int dest, int id, int sub1, int sub2, int sub3);
@@ -67,6 +67,7 @@ extern int dual_role_set_prop(struct dual_role_phy_instance *dual_role,
 extern int dual_role_is_writeable(struct dual_role_phy_instance *drp,
 				  enum dual_role_property prop);
 #endif
+extern void dp_detach(void *data);
 ////////////////////////////////////////////////////////////////////////////////
 // external functions in ccic_alternate.c
 ////////////////////////////////////////////////////////////////////////////////
@@ -74,6 +75,11 @@ extern void send_alternate_message(void * data, int cmd);
 extern void receive_alternate_message(void * data, VDM_MSG_IRQ_STATUS_Type *VDM_MSG_IRQ_State);
 extern int ccic_register_switch_device(int mode);
 extern void acc_detach_check(struct work_struct *work);
+extern void set_usb_phy_completion(int kind);
+extern void set_enable_alternate_mode(int mode);
+extern void set_clear_discover_mode(void);
+extern void set_host_turn_on_event(int mode);
+extern int get_diplayport_status(void);
 ////////////////////////////////////////////////////////////////////////////////
 // external functions in s2mm005_pd.c
 ////////////////////////////////////////////////////////////////////////////////

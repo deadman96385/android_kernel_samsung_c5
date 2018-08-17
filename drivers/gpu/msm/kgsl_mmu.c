@@ -24,6 +24,10 @@
 #include "kgsl_device.h"
 #include "kgsl_sharedmem.h"
 
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+#include <linux/delay.h>
+#endif
+
 static void pagetable_remove_sysfs_objects(struct kgsl_pagetable *pagetable);
 
 static void kgsl_destroy_pagetable(struct kref *kref)
@@ -389,6 +393,10 @@ kgsl_mmu_map(struct kgsl_pagetable *pagetable,
 	int ret = 0;
 	int size;
 
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	int retry_cnt;
+#endif
+
 	if (!memdesc->gpuaddr)
 		return -EINVAL;
 	/* Only global mappings should be mapped multiple times */
@@ -400,6 +408,21 @@ kgsl_mmu_map(struct kgsl_pagetable *pagetable,
 
 	if (PT_OP_VALID(pagetable, mmu_map))
 		ret = pagetable->pt_ops->mmu_map(pagetable, memdesc);
+
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+		if (ret != 0 && !in_interrupt()) {
+			for (retry_cnt = 0; retry_cnt < 62 ; retry_cnt++) {
+				/* To wait free page by memory reclaim*/
+				usleep_range(16000, 16000);
+
+				pr_err("kgsl_mmu_map failed : retry (%d) ret : %d\n", retry_cnt, ret);
+
+				ret = pagetable->pt_ops->mmu_map(pagetable, memdesc);
+				if (ret == 0)
+					break;
+			}
+		}
+#endif
 
 	if (ret)
 		return ret;
@@ -422,21 +445,21 @@ EXPORT_SYMBOL(kgsl_mmu_map);
 void kgsl_mmu_put_gpuaddr(struct kgsl_memdesc *memdesc)
 {
 	struct kgsl_pagetable *pagetable = memdesc->pagetable;
-	int unmap_fail = 0;	
-	
+	int unmap_fail = 0;
+
 	if (memdesc->size == 0 || memdesc->gpuaddr == 0)
 		return;
 
 	if (!kgsl_memdesc_is_global(memdesc))
 		unmap_fail = kgsl_mmu_unmap(pagetable, memdesc);
 
-	/*	 * Do not free the gpuaddr/size if unmap fails. Because if we
+	/*
+	 * Do not free the gpuaddr/size if unmap fails. Because if we
 	 * try to map this range in future, the iommu driver will throw
 	 * a BUG_ON() because it feels we are overwriting a mapping.
 	*/
 	if (PT_OP_VALID(pagetable, put_gpuaddr) && (unmap_fail == 0))
-		pagetable->pt_ops->put_gpuaddr(memdesc); 
-
+		pagetable->pt_ops->put_gpuaddr(memdesc);
 
 	if (!kgsl_memdesc_is_global(memdesc))
 		memdesc->gpuaddr = 0;
@@ -524,12 +547,12 @@ void kgsl_mmu_remove_global(struct kgsl_device *device,
 EXPORT_SYMBOL(kgsl_mmu_remove_global);
 
 void kgsl_mmu_add_global(struct kgsl_device *device,
-		struct kgsl_memdesc *memdesc)
+		struct kgsl_memdesc *memdesc, const char *name)
 {
 	struct kgsl_mmu *mmu = &device->mmu;
 
 	if (MMU_OP_VALID(mmu, mmu_add_global))
-		mmu->mmu_ops->mmu_add_global(mmu, memdesc);
+		mmu->mmu_ops->mmu_add_global(mmu, memdesc, name);
 }
 EXPORT_SYMBOL(kgsl_mmu_add_global);
 
@@ -606,7 +629,7 @@ static struct kgsl_mmu_pt_ops nommu_pt_ops = {
 };
 
 static void nommu_add_global(struct kgsl_mmu *mmu,
-		struct kgsl_memdesc *memdesc)
+		struct kgsl_memdesc *memdesc, const char *name)
 {
 	memdesc->gpuaddr = (uint64_t) sg_phys(memdesc->sgt->sgl);
 }

@@ -159,12 +159,12 @@ static int32_t msm_cci_set_clk_param(struct cci_device *cci_dev,
 			clk_params->hw_trdhld << 4 | clk_params->hw_tsp,
 			cci_dev->base + CCI_I2C_M1_MISC_CTL_ADDR);
 	}
-	else{
+	else {
 		pr_err("%s:%d invalid master = %d",
 			__func__, __LINE__, master);
 		return -EINVAL;
 	}
-	
+
 	cci_dev->i2c_freq_mode[master] = i2c_freq_mode;
 	return 0;
 }

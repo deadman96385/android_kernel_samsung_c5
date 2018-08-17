@@ -30,6 +30,7 @@
 #include <linux/host_notify.h>
 
 #include <linux/muic/muic.h>
+#include <linux/usb_notify.h>
 
 #if defined(CONFIG_MUIC_NOTIFIER)
 #include <linux/muic/muic_notifier.h>
@@ -64,6 +65,10 @@
 extern void muic_afc_delay_check_state(int state);
 #endif
 
+#if defined(CONFIG_MUIC_UNIVERSAL_SM5708)
+extern void sm5708_vdp_src_en_state(muic_data_t *muic, int state);
+#endif
+
 extern void muic_send_dock_intent(int type);
 
 extern int muic_wakeup_noti;
@@ -79,7 +84,7 @@ static void muic_handle_attach(muic_data_t *pmuic,
 {
 	int ret = 0;
 	bool noti_f = true;
-#if defined(CONFIG_MUIC_UNIVERSAL_SM5703)
+#if defined(CONFIG_MUIC_UNIVERSAL_SM5703) && !defined(CONFIG_SEC_J3Y17QLTE_PROJECT)
 	struct vendor_ops *pvendor = pmuic->regmapdesc->vendorops;
 
 	/* W/A of sm5703 lanhub issue */
@@ -128,14 +133,12 @@ static void muic_handle_attach(muic_data_t *pmuic,
 	case ATTACHED_DEV_OTG_MUIC:
 	/* OTG -> LANHUB, meaning TA is attached to LANHUB(OTG)
 	   OTG -> GAMEPAD, meaning Earphone is detached to GAMEPAD(OTG) */
-#if defined(CONFIG_SM5705_SUPPORT_LANHUB)
 		if (new_dev == ATTACHED_DEV_USB_LANHUB_MUIC) {
 			pr_info("%s:%s OTG+TA=>LANHUB. Do not detach OTG.\n",
 					__func__, MUIC_DEV_NAME);
 			noti_f = false;
 			break;
 		}
-#endif
 		if (new_dev == ATTACHED_DEV_GAMEPAD_MUIC) {
 			pr_info("%s:%s OTG+No Earphone=>GAMEPAD. Do not detach OTG.\n",
 					__func__, MUIC_DEV_NAME);
@@ -152,7 +155,6 @@ static void muic_handle_attach(muic_data_t *pmuic,
 			pmuic->is_gamepad = false;
 			muic_send_dock_intent(MUIC_DOCK_DETACHED);
 		}
-#if defined(CONFIG_SM5705_SUPPORT_LANHUB)
 	case ATTACHED_DEV_USB_LANHUB_MUIC:
 		if (new_dev != pmuic->attached_dev) {
 			pr_warn("%s:%s new(%d)!=attached(%d), assume detach\n",
@@ -161,7 +163,6 @@ static void muic_handle_attach(muic_data_t *pmuic,
 			ret = detach_otg_usb(pmuic);
 		}
 		break;
-#endif
 	case ATTACHED_DEV_AUDIODOCK_MUIC:
 		if (new_dev != pmuic->attached_dev) {
 			pr_warn("%s:%s new(%d)!=attached(%d), assume detach\n",
@@ -264,7 +265,7 @@ static void muic_handle_attach(muic_data_t *pmuic,
 	case ATTACHED_DEV_OTG_MUIC:
 		ret = attach_otg_usb(pmuic, new_dev);
 		break;
-#if defined(CONFIG_SM5705_SUPPORT_LANHUB)
+#if defined(CONFIG_MUIC_SUPPORT_LANHUB)
 	case ATTACHED_DEV_USB_LANHUB_MUIC:
 		ret = attach_otg_usb(pmuic, new_dev);
 		break;
@@ -286,6 +287,10 @@ static void muic_handle_attach(muic_data_t *pmuic,
         
 #ifdef CONFIG_MUIC_SM5705_AFC_18W_TA_SUPPORT
        pmuic->is_18w_ta = 0;
+#endif
+
+#if defined(CONFIG_MUIC_UNIVERSAL_SM5708)
+		sm5708_vdp_src_en_state(pmuic, 1);
 #endif
 		break;
 	case ATTACHED_DEV_JIG_UART_OFF_MUIC:
@@ -429,7 +434,7 @@ static void muic_handle_detach(muic_data_t *pmuic)
 	case ATTACHED_DEV_HMT_MUIC:
 		ret = detach_otg_usb(pmuic);
 		break;
-#if defined(CONFIG_SM5705_SUPPORT_LANHUB)
+#if defined(CONFIG_MUIC_SUPPORT_LANHUB)
 	case ATTACHED_DEV_USB_LANHUB_MUIC:
 		ret = detach_otg_usb(pmuic);
 		break;
@@ -437,6 +442,9 @@ static void muic_handle_detach(muic_data_t *pmuic)
 	case ATTACHED_DEV_TA_MUIC:
 		pmuic->attached_dev = ATTACHED_DEV_NONE_MUIC;
 		detach_ta(pmuic);
+#if defined(CONFIG_MUIC_UNIVERSAL_SM5708)
+		sm5708_vdp_src_en_state(pmuic, 0);
+#endif
 		break;
 	case ATTACHED_DEV_JIG_UART_OFF_VB_MUIC:
 	case ATTACHED_DEV_JIG_UART_OFF_MUIC:
@@ -493,6 +501,8 @@ static void muic_handle_detach(muic_data_t *pmuic)
 		break;
 	}
 
+	pmuic->muic_reset_count = 0;
+		
 	if (noti_f) {
 		MUIC_INFO("muic_notifier_detach_attached_dev: %d\n", pmuic->attached_dev);
 		muic_notifier_detach_attached_dev(pmuic->attached_dev);
@@ -514,7 +524,6 @@ void muic_detect_dev(muic_data_t *pmuic)
 	struct vendor_ops *pvendor = pmuic->regmapdesc->vendorops;
 	bool dcd;
 #endif
-
 	get_vps_data(pmuic, &pmuic->vps);
 
 	MUIC_INFO_K("%s:%s dev[1:0x%x, 2:0x%x, 3:0x%x], adc:0x%x, vbvolt:0x%x\n",

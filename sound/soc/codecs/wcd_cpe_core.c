@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -891,14 +891,7 @@ static int wcd_cpe_enable(struct wcd_cpe_core *core,
 			 * instead SSR handler will control CPE.
 			 */
 			wcd_cpe_enable_cpe_clks(core, false);
-			/*
-			 * During BUS_DOWN event, possibly the
-			 * irq driver is under cleanup, do not request
-			 * cleanup of irqs here, rather cleanup irqs
-			 * once BUS_UP event is received.
-			 */
-			if (core->ssr_type != WCD_CPE_BUS_DOWN_EVENT)
-				wcd_cpe_cleanup_irqs(core);
+			wcd_cpe_cleanup_irqs(core);
 			goto done;
 		}
 
@@ -1149,7 +1142,6 @@ int wcd_cpe_ssr_event(void *core_handle,
 		break;
 
 	case WCD_CPE_BUS_UP_EVENT:
-		wcd_cpe_cleanup_irqs(core);
 		wcd_cpe_set_and_complete(core, WCD_CPE_BUS_READY);
 		/*
 		 * In case of bus up event ssr_type will be changed
@@ -1953,6 +1945,7 @@ struct wcd_cpe_core *wcd_cpe_init(const char *img_fname,
 	init_completion(&core->online_compl);
 	init_waitqueue_head(&core->ssr_entry.offline_poll_wait);
 	mutex_init(&core->ssr_lock);
+	mutex_init(&core->session_lock);
 	core->cpe_users = 0;
 	core->cpe_clk_ref = 0;
 
@@ -3051,25 +3044,9 @@ static int wcd_cpe_set_one_param(void *core_handle,
 		rc = wcd_cpe_send_param_epd_thres(core, session,
 						data, &ids);
 		break;
-	case LSM_OPERATION_MODE: {
-		struct cpe_lsm_ids connectport_ids;
-
-		rc = wcd_cpe_send_param_opmode(core, session,
-					data, &ids);
-		if (rc)
-			break;
-
-		connectport_ids.module_id = LSM_MODULE_ID_FRAMEWORK;
-		connectport_ids.param_id = LSM_PARAM_ID_CONNECT_TO_PORT;
-
-		rc = wcd_cpe_send_param_connectport(core, session, NULL,
-				       &connectport_ids, CPE_AFE_PORT_1_TX);
-		if (rc)
-			dev_err(core->dev,
-				"%s: send_param_connectport failed, err %d\n",
-				__func__, rc);
+	case LSM_OPERATION_MODE:
+		rc = wcd_cpe_send_param_opmode(core, session, data, &ids);
 		break;
-	}
 	case LSM_GAIN:
 		rc = wcd_cpe_send_param_gain(core, session, data, &ids);
 		break;
@@ -3422,6 +3399,7 @@ static struct cpe_lsm_session *wcd_cpe_alloc_lsm_session(
 	 * If this is the first session to be allocated,
 	 * only then register the afe service.
 	 */
+	WCD_CPE_GRAB_LOCK(&core->session_lock, "session_lock");
 	if (!wcd_cpe_lsm_session_active())
 		afe_register_service = true;
 
@@ -3436,6 +3414,7 @@ static struct cpe_lsm_session *wcd_cpe_alloc_lsm_session(
 		dev_err(core->dev,
 			"%s: max allowed sessions already allocated\n",
 			__func__);
+		WCD_CPE_REL_LOCK(&core->session_lock, "session_lock");
 		return NULL;
 	}
 
@@ -3444,6 +3423,7 @@ static struct cpe_lsm_session *wcd_cpe_alloc_lsm_session(
 		dev_err(core->dev,
 			"%s: Failed to enable cpe, err = %d\n",
 			__func__, ret);
+		WCD_CPE_REL_LOCK(&core->session_lock, "session_lock");
 		return NULL;
 	}
 
@@ -3490,6 +3470,8 @@ static struct cpe_lsm_session *wcd_cpe_alloc_lsm_session(
 	init_completion(&session->cmd_comp);
 
 	lsm_sessions[session_id] = session;
+
+	WCD_CPE_REL_LOCK(&core->session_lock, "session_lock");
 	return session;
 
 err_afe_mode_cmd:
@@ -3504,6 +3486,7 @@ err_ret:
 
 err_session_alloc:
 	wcd_cpe_vote(core, false);
+	WCD_CPE_REL_LOCK(&core->session_lock, "session_lock");
 	return NULL;
 }
 
@@ -3653,9 +3636,11 @@ static int wcd_cpe_dealloc_lsm_session(void *core_handle,
 	struct wcd_cpe_core *core = core_handle;
 	int ret = 0;
 
+	WCD_CPE_GRAB_LOCK(&core->session_lock, "session_lock");
 	if (!session) {
 		dev_err(core->dev,
 			"%s: Invalid lsm session\n", __func__);
+		WCD_CPE_REL_LOCK(&core->session_lock, "session_lock");
 		return -EINVAL;
 	}
 
@@ -3666,6 +3651,7 @@ static int wcd_cpe_dealloc_lsm_session(void *core_handle,
 			"%s: Wrong session id %d max allowed = %d\n",
 			__func__, session->id,
 			WCD_CPE_LSM_MAX_SESSIONS);
+		WCD_CPE_REL_LOCK(&core->session_lock, "session_lock");
 		return -EINVAL;
 	}
 
@@ -3686,6 +3672,7 @@ static int wcd_cpe_dealloc_lsm_session(void *core_handle,
 			"%s: Failed to un-vote cpe, err = %d\n",
 			__func__, ret);
 
+	WCD_CPE_REL_LOCK(&core->session_lock, "session_lock");
 	return ret;
 }
 

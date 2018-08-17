@@ -24,6 +24,12 @@ config KEYBOARD_ABOV_TOUCH_16XX
 	help
 	  Say Y here if you want to use ABOV MC96FT16XX chip as touchkey.
 
+config KEYBOARD_ABOV_TOUCH_T316
+	tristate "Abov A96T316XX touchkey"
+	depends on I2C
+	help
+	  Say Y here if you want to use ABOV A96T316XX chip as touchkey.
+
 config KEYBOARD_TC3XXK
 	tristate "Coreriver TC3xxK touchkey series"
 	depends on I2C
@@ -738,6 +744,19 @@ config TOUCHKEY_GRIP
 	depends on I2C
 	help
 	 Say Y if you want use touchkey grip.
+	 
+config TOUCHKEY_LED
+	tristate "touchkey backlight led"
+	depends on I2C
+	help
+	 Say Y if you want use touchkey backlight led.
+	 
+config TOUCHKEY_LIGHT_EFS
+	tristate "touchkey led light with efs"
+	depends on I2C && TOUCHKEY_LED
+	help
+	  Say Y here if you want to use touchkey light efs.
+
 
 source "drivers/input/keyboard/melfas_mip4/Kconfig"
 endif

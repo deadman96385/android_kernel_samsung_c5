@@ -186,7 +186,8 @@ typedef struct _muic_data_t {
 	/* Add Muic structure's member variable for VZW requirement(Rp0 Cable) */
 #if defined(CONFIG_MUIC_SUPPORT_CCIC)
 	bool			is_ccic_attach;
-#if defined(CONFIG_MUIC_UNIVERSAL_SM5705_AFC)	
+#if defined(CONFIG_MUIC_UNIVERSAL_SM5705_AFC)
+	int			afc_retry_count;	
 	bool			retry_afc;
 #endif
 #endif		
@@ -241,7 +242,11 @@ typedef struct _muic_data_t {
     int sm570x_switch_gpio;
 #endif
 
+	int muic_reset_count;
 	struct mutex lock;
+#if defined(CONFIG_MUIC_UNIVERSAL_SM5708)
+	struct delayed_work	vdp_src_en_work;
+#endif
 }muic_data_t;
 
 extern struct device *switch_device;

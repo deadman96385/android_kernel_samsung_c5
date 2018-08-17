@@ -61,7 +61,7 @@ int mip4_tk_i2c_read(struct mip4_tk_info *info, char *write_buf, unsigned int wr
 	if (!info->enabled) {
 		input_err(true, &info->client->dev,
 			"%s [ERROR] device disabled\n", __func__);
-		return 1;
+		return 0;
 	}
 
 	mutex_lock(&info->lock);
@@ -103,7 +103,7 @@ int mip4_tk_i2c_write(struct mip4_tk_info *info, char *write_buf, unsigned int w
 	if (!info->enabled) {
 		input_err(true, &info->client->dev,
 			"%s [ERROR] device disabled\n", __func__);
-		return 1;
+		return 0;
 	}
 
 	mutex_lock(&info->lock);
@@ -654,7 +654,9 @@ ERROR:
 	if (RESET_ON_EVENT_ERROR) {
 		input_info(true, &client->dev, "%s - Reset on error\n", __func__);
 
-		mip4_tk_reboot(info);
+		mip4_tk_disable(info);
+		mip4_tk_clear_input(info);
+		mip4_tk_enable(info);
 	}
 
 	input_err(true, &client->dev, "%s [ERROR]\n", __func__);
@@ -1118,7 +1120,6 @@ static int mip4_tk_probe(struct i2c_client *client, const struct i2c_device_id *
 #endif
 
 	/* Set interrupt handler */
-	info->irq = client->irq;
 	ret = request_threaded_irq(client->irq, NULL,
 			mip4_tk_interrupt, IRQF_TRIGGER_LOW | IRQF_ONESHOT,
 			MIP_DEV_NAME, info);

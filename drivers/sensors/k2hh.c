@@ -27,8 +27,12 @@
 #include <linux/of_gpio.h>
 #include <linux/wakelock.h>
 #include <linux/regulator/consumer.h>
-
 #include <linux/sensor/sensors_core.h>
+
+#ifdef TAG
+#undef TAG
+#define TAG "[ACCEL]"
+#endif
 
 #define I2C_M_WR                      0 /* for i2c Write */
 #define I2c_M_RD                      1 /* for i2c Read */
@@ -130,6 +134,10 @@
 #define ENABLE_LOG_ACCEL_MAX_OUT      1
 #if defined(ENABLE_LOG_ACCEL_MAX_OUT)
 #define ACCEL_MAX_OUTPUT              32760
+#endif
+
+#if defined(CONFIG_SAMSUNG_LPM_MODE)
+extern int poweroff_charging;
 #endif
 
 enum {
@@ -1581,6 +1589,13 @@ static struct i2c_driver k2hh_driver = {
 
 static int __init k2hh_init(void)
 {
+#if defined(CONFIG_SAMSUNG_LPM_MODE)
+	if (poweroff_charging) {
+		SENSOR_INFO("Skip init due to low power charging mode %d\n", poweroff_charging);
+		return 0;
+	}
+#endif
+
 	return i2c_add_driver(&k2hh_driver);
 }
 

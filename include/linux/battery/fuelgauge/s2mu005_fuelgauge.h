@@ -89,6 +89,7 @@ struct s2mu005_platform_data {
 	int fuel_alert_soc;
 	int fullsocthr;
 	int fg_irq;
+	int fg_log_enable;
 
 	char *fuelgauge_name;
 

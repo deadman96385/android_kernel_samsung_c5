@@ -825,7 +825,7 @@ static int32_t msm_flash_config(struct msm_flash_ctrl_t *flash_ctrl,
 				ktd2692_flash_on(1);
 				CDBG("Ktd2692 led turn on:CFG_FLASH_TORCH\n");
 #endif
-				rc = 0;			
+				rc = 0;
 			}
 		}
 		break;
@@ -930,7 +930,11 @@ static int32_t msm_ext_flash_low(
 	ext_pmic_flash_ctrl_t led_ctrl;
 
 	memset(&led_ctrl, 0, sizeof(ext_pmic_flash_ctrl_t));
+#if defined(CONFIG_SEC_C7LTE_CHN)
+	if (flash_ctrl->ext_pmic_func_tbl.ext_pmic_torch_on)
+#else
 	if (flash_ctrl->ext_pmic_func_tbl.ext_pmic_pre_flash_on)
+#endif
 	{
 		led_ctrl.index = 0;
 
@@ -1010,9 +1014,11 @@ static int32_t msm_ext_flash_torch(
 	memset(&led_ctrl, 0, sizeof(ext_pmic_flash_ctrl_t));
 	if (flash_ctrl->ext_pmic_func_tbl.ext_pmic_torch_on)
 	{
+#if !defined(CONFIG_SEC_C7LTE_CHN)
 		led_ctrl.index = 0;
+#endif
 		rc = flash_ctrl->ext_pmic_func_tbl.ext_pmic_torch_on(&led_ctrl);
-#if defined(CONFIG_DUAL_LEDS_FLASH)
+#if defined(CONFIG_DUAL_LEDS_FLASH) && !defined(CONFIG_SEC_C7LTE_CHN)
 		led_ctrl.index = 1;
 		rc = flash_ctrl->ext_pmic_func_tbl.ext_pmic_torch_on(&led_ctrl);
 #endif

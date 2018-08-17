@@ -18,6 +18,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/bitops.h>
 #include <linux/delay.h>
+#include <linux/backing-dev.h>
 
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
@@ -126,14 +127,11 @@ static int mmc_cmdq_thread(void *d)
 
 		ret = mq->cmdq_issue_fn(mq, mq->cmdq_req_peeked);
 		/*
-		 * Don't requeue if issue_fn fails, just bug on.
-		 * We don't expect failure here and there is no recovery other
-		 * than fixing the actual issue if there is any.
+		 * Don't requeue if issue_fn fails.
+		 * Recovery will be come by completion softirq
 		 * Also we end the request if there is a partition switch error,
 		 * so we should not requeue the request here.
 		 */
-		if (ret)
-			BUG_ON(1);
 	} /* loop */
 
 	return 0;
@@ -145,6 +143,7 @@ static int mmc_queue_thread(void *d)
 	struct request_queue *q = mq->queue;
 
 	current->flags |= PF_MEMALLOC;
+	set_wake_up_idle(true);
 
 	down(&mq->thread_sem);
 	do {
@@ -481,6 +480,27 @@ success:
 	mq->thread = kthread_run(mmc_queue_thread, mq, "mmcqd/%d%s",
 		host->index, subname ? subname : "");
 
+	if (mmc_card_sd(card)) {
+		/* decrease max # of requests to 32. The goal of this tunning is
+		 * reducing the time for draining elevator when elevator_switch
+		 * function is called. It is effective for slow external sdcard.
+		 */
+		mq->queue->nr_requests = BLKDEV_MAX_RQ / 8;
+		if (mq->queue->nr_requests < 32) mq->queue->nr_requests = 32;
+#ifdef CONFIG_LARGE_DIRTY_BUFFER
+		/* apply more throttle on external sdcard */
+		mq->queue->backing_dev_info.capabilities |= BDI_CAP_STRICTLIMIT;
+		bdi_set_min_ratio(&mq->queue->backing_dev_info, 20);
+		bdi_set_max_ratio(&mq->queue->backing_dev_info, 20);
+#endif
+		pr_info("Parameters for external-sdcard: min/max_ratio: %u/%u "
+			   "strictlimit: on nr_requests: %lu read_ahead_kb: %lu\n",
+			   mq->queue->backing_dev_info.min_ratio,
+			   mq->queue->backing_dev_info.max_ratio,
+			   mq->queue->nr_requests,
+			   mq->queue->backing_dev_info.ra_pages * 4);
+   }
+
 	if (IS_ERR(mq->thread)) {
 		ret = PTR_ERR(mq->thread);
 		goto free_bounce_sg;
@@ -664,7 +684,7 @@ int mmc_cmdq_init(struct mmc_queue *mq, struct mmc_card *card)
 	init_completion(&mq->cmdq_pending_req_done);
 
 	blk_queue_rq_timed_out(mq->queue, mmc_cmdq_rq_timed_out);
-	blk_queue_rq_timeout(mq->queue, 120 * HZ);
+	blk_queue_rq_timeout(mq->queue, 30 * HZ);
 	card->cmdq_init = true;
 
 	goto out;
@@ -768,13 +788,11 @@ int mmc_queue_suspend(struct mmc_queue *mq, int wait)
 			spin_unlock_irqrestore(q->queue_lock, flags);
 			rc = -EBUSY;
 		} else if (wait) {
-			printk("%s: mq->flags: %ld, q->queue_flags: %lu,\
-					q->in_flight (%d, %d)\n",
+			struct request *req;
+			printk("%s: mq->flags: %ld, q->queue_flags: 0x%lx, \
+					q->in_flight (%d, %d) \n",
 					mmc_hostname(mq->card->host), mq->flags,
 					q->queue_flags, q->in_flight[0], q->in_flight[1]);
-			/*
-			 * wait is set only when mmc_blk_shutdown calls this,
-			 */
 			mutex_lock(&q->sysfs_lock);
 			queue_flag_set_unlocked(QUEUE_FLAG_DYING, q);
 

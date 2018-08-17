@@ -216,7 +216,7 @@
  *
  * ************************************************************************************************************************************
  */
- 		samsung,support_panel_max = <1>;
+		samsung,support_panel_max = <1>;
 		samsung,hw-config = "single_dsi";
 		samsung,support_mdnie_lite;
 

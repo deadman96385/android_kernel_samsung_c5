@@ -668,6 +668,17 @@ static int sm5705_get_vbus_value(struct regmap_desc *pdesc)
 	int ret;
 	int attr, value;
 	int i, retry_cnt = 20;
+/*
+ WORKAROUND :  forbid vbus read during AFC protocol hand-shaking
+ when testing with Battery_status APK, this apk will read vbus through  following operations  
+ these operations may cause AFC recognition fail  if AFC hand-shanking is started but  not finished yet
+ that casue  conflict and impact on  AFC_VBUS_UPDATE ,  so AFC_VBUS_UPDATE interrupt  will never trigger  
+*/
+	if (muic->attached_dev == ATTACHED_DEV_AFC_CHARGER_PREPARE_MUIC){
+		
+		pr_info("%s: AFC protocol hand-shaking , so skip vbus read:%d\n", __func__, val);
+		return -EINVAL;
+	}
 
 	/* write '1' to INT3_VBUS_UPDATE_M: masking */
 	attr = INT3_VBUS_UPDATE_M;

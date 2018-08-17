@@ -84,7 +84,6 @@
 #include <linux/export.h>
 #include <linux/msg.h>
 #include <linux/shm.h>
-#include <linux/pft.h>
 #include <linux/pfk.h>
 
 // [ SEC_SELINUX_PORTING_COMMON
@@ -106,8 +105,18 @@ extern struct security_operations *security_ops;
 /* SECMARK reference count */
 static atomic_t selinux_secmark_refcount = ATOMIC_INIT(0);
 
+// [ SEC_SELINUX_PORTING_COMMON
+static DEFINE_MUTEX(selinux_sdcardfs_lock);
+// ] SEC_SELINUX_PORTING_COMMON
+
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
+// [ SEC_SELINUX_PORTING_COMMON
+#if defined(CONFIG_ALWAYS_ENFORCE) && defined(CONFIG_RKP_KDP)
+RKP_RO_AREA int selinux_enforcing;
+#else
 int selinux_enforcing;
+#endif
+// ] SEC_SELINUX_PORTING_COMMON
 
 static int __init enforcing_setup(char *str)
 {
@@ -429,6 +438,7 @@ static int selinux_is_sblabel_mnt(struct super_block *sb)
 		!strcmp(sb->s_type->name, "sysfs") ||
 		!strcmp(sb->s_type->name, "pstore") ||
 		!strcmp(sb->s_type->name, "debugfs") ||
+		!strcmp(sb->s_type->name, "tracefs") ||
 		!strcmp(sb->s_type->name, "rootfs");
 }
 
@@ -753,6 +763,7 @@ static int selinux_set_mnt_opts(struct super_block *sb,
 		sbsec->flags |= SE_SBPROC | SE_SBGENFS;
 
 	if (!strcmp(sb->s_type->name, "debugfs") ||
+	    !strcmp(sb->s_type->name, "tracefs") ||
 	    !strcmp(sb->s_type->name, "sysfs") ||
 	    !strcmp(sb->s_type->name, "pstore"))
 		sbsec->flags |= SE_SBGENFS;
@@ -1219,8 +1230,6 @@ static inline u16 socket_type_to_security_class(int family, int type, int protoc
 		switch (protocol) {
 		case NETLINK_ROUTE:
 			return SECCLASS_NETLINK_ROUTE_SOCKET;
-		case NETLINK_FIREWALL:
-			return SECCLASS_NETLINK_FIREWALL_SOCKET;
 		case NETLINK_SOCK_DIAG:
 			return SECCLASS_NETLINK_TCPDIAG_SOCKET;
 		case NETLINK_NFLOG:
@@ -1229,14 +1238,28 @@ static inline u16 socket_type_to_security_class(int family, int type, int protoc
 			return SECCLASS_NETLINK_XFRM_SOCKET;
 		case NETLINK_SELINUX:
 			return SECCLASS_NETLINK_SELINUX_SOCKET;
+		case NETLINK_ISCSI:
+			return SECCLASS_NETLINK_ISCSI_SOCKET;
 		case NETLINK_AUDIT:
 			return SECCLASS_NETLINK_AUDIT_SOCKET;
-		case NETLINK_IP6_FW:
-			return SECCLASS_NETLINK_IP6FW_SOCKET;
+		case NETLINK_FIB_LOOKUP:
+			return SECCLASS_NETLINK_FIB_LOOKUP_SOCKET;
+		case NETLINK_CONNECTOR:
+			return SECCLASS_NETLINK_CONNECTOR_SOCKET;
+		case NETLINK_NETFILTER:
+			return SECCLASS_NETLINK_NETFILTER_SOCKET;
 		case NETLINK_DNRTMSG:
 			return SECCLASS_NETLINK_DNRT_SOCKET;
 		case NETLINK_KOBJECT_UEVENT:
 			return SECCLASS_NETLINK_KOBJECT_UEVENT_SOCKET;
+		case NETLINK_GENERIC:
+			return SECCLASS_NETLINK_GENERIC_SOCKET;
+		case NETLINK_SCSITRANSPORT:
+			return SECCLASS_NETLINK_SCSITRANSPORT_SOCKET;
+		case NETLINK_RDMA:
+			return SECCLASS_NETLINK_RDMA_SOCKET;
+		case NETLINK_CRYPTO:
+			return SECCLASS_NETLINK_CRYPTO_SOCKET;
 		default:
 			return SECCLASS_NETLINK_SOCKET;
 		}
@@ -1751,15 +1774,9 @@ static int may_create(struct inode *dir,
 	if (rc)
 		return rc;
 
-	rc = avc_has_perm(newsid, sbsec->sid,
-			  SECCLASS_FILESYSTEM,
-			  FILESYSTEM__ASSOCIATE, &ad);
-	if (rc)
-		return rc;
-
-	rc = pft_inode_mknod(dir, dentry, 0, 0);
-
-	return rc;
+	return avc_has_perm(newsid, sbsec->sid,
+						SECCLASS_FILESYSTEM,
+						FILESYSTEM__ASSOCIATE, &ad);
 }
 
 /* Check whether a task can create a key. */
@@ -1815,14 +1832,7 @@ static int may_link(struct inode *dir,
 		return 0;
 	}
 
-	rc = avc_has_perm(sid, isec->sid, isec->sclass, av, &ad);
-	if (rc)
-		return rc;
-
-	if (kind == MAY_UNLINK)
-		rc = pft_inode_unlink(dir, dentry);
-
-	return rc;
+	return avc_has_perm(sid, isec->sid, isec->sclass, av, &ad);
 }
 
 static inline int may_rename(struct inode *old_dir,
@@ -2693,17 +2703,28 @@ static int selinux_sb_kern_mount(struct super_block *sb, int flags, void *data)
 	struct common_audit_data ad;
 	int rc;
 
+	// [ SEC_SELINUX_PORTING_COMMON
+	if((strcmp(sb->s_type->name,"sdcardfs")) == 0)
+		mutex_lock(&selinux_sdcardfs_lock);
+
 	rc = superblock_doinit(sb, data);
 	if (rc)
-		return rc;
+		goto out;
 
 	/* Allow all mounts performed by the kernel */
 	if (flags & MS_KERNMOUNT)
-		return 0;
+		goto out;
 
 	ad.type = LSM_AUDIT_DATA_DENTRY;
 	ad.u.dentry = sb->s_root;
-	return superblock_has_perm(cred, sb, FILESYSTEM__MOUNT, &ad);
+	rc = superblock_has_perm(cred, sb, FILESYSTEM__MOUNT, &ad);
+
+out:
+	if((strcmp(sb->s_type->name,"sdcardfs")) == 0)
+		mutex_unlock(&selinux_sdcardfs_lock);
+	// ] SEC_SELINUX_PORTING_COMMON
+	
+	return rc;
 }
 
 static int selinux_sb_statfs(struct dentry *dentry)
@@ -2847,22 +2868,7 @@ static int selinux_inode_init_security(struct inode *inode, struct inode *dir,
 
 static int selinux_inode_create(struct inode *dir, struct dentry *dentry, umode_t mode)
 {
-	int ret;
-
-	ret = pft_inode_create(dir, dentry, mode);
-	if (ret < 0)
-		return ret;
 	return may_create(dir, dentry, SECCLASS_FILE);
-}
-
-static int selinux_inode_post_create(struct inode *dir, struct dentry *dentry,
-				     umode_t mode)
-{
-	int ret;
-
-	ret = pft_inode_post_create(dir, dentry, mode);
-
-	return ret;
 }
 
 static int selinux_inode_link(struct dentry *old_dentry, struct inode *dir, struct dentry *new_dentry)
@@ -2898,12 +2904,6 @@ static int selinux_inode_mknod(struct inode *dir, struct dentry *dentry, umode_t
 static int selinux_inode_rename(struct inode *old_inode, struct dentry *old_dentry,
 				struct inode *new_inode, struct dentry *new_dentry)
 {
-	int rc;
-
-	rc = pft_inode_rename(old_inode, old_dentry, new_inode, new_dentry);
-	if (rc)
-		return rc;
-
 	return may_rename(old_inode, old_dentry, new_inode, new_dentry);
 }
 
@@ -3040,9 +3040,6 @@ static int selinux_inode_getattr(struct vfsmount *mnt, struct dentry *dentry)
 static int selinux_inode_setotherxattr(struct dentry *dentry, const char *name)
 {
 	const struct cred *cred = current_cred();
-
-	if (pft_inode_set_xattr(dentry, name, NULL, 0, 0) < 0)
-		return -EACCES;
 
 	if (!strncmp(name, XATTR_SECURITY_PREFIX,
 		     sizeof XATTR_SECURITY_PREFIX - 1)) {
@@ -3291,15 +3288,10 @@ static int selinux_file_permission(struct file *file, int mask)
 	struct file_security_struct *fsec = file->f_security;
 	struct inode_security_struct *isec = inode->i_security;
 	u32 sid = current_sid();
-	int ret;
 
 	if (!mask)
 		/* No permission to check.  Existence test. */
 		return 0;
-
-	ret = pft_file_permission(file, mask);
-	if (ret < 0)
-		return ret;
 
 	if (sid == fsec->sid && fsec->isid == isec->sid &&
 	    fsec->pseqno == avc_policy_seqno())
@@ -3595,11 +3587,6 @@ static int selinux_file_open(struct file *file, const struct cred *cred)
 {
 	struct file_security_struct *fsec;
 	struct inode_security_struct *isec;
-	int ret;
-
-	ret = pft_file_open(file, cred);
-	if (ret < 0)
-		return ret;
 
 	fsec = file->f_security;
 	isec = file_inode(file)->i_security;
@@ -3621,18 +3608,6 @@ static int selinux_file_open(struct file *file, const struct cred *cred)
 	 * This check is not redundant - do not remove.
 	 */
 	return file_path_has_perm(cred, file, open_file_to_av(file));
-}
-
-static int selinux_file_close(struct file *file)
-{
-	return pft_file_close(file);
-}
-
-
-static bool selinux_allow_merge_bio(struct bio *bio1, struct bio *bio2)
-{
-	return pft_allow_merge_bio(bio1, bio2) &&
-		pfk_allow_merge_bio(bio1, bio2);
 }
 
 /* task security operations */
@@ -5821,7 +5796,7 @@ static int selinux_setprocattr(struct task_struct *p,
 		return error;
 
 	/* Obtain a SID for the context, if one was specified. */
-	if (size && str[1] && str[1] != '\n') {
+	if (size && str[0] && str[0] != '\n') {
 		if (str[size-1] == '\n') {
 			str[size-1] = 0;
 			size--;
@@ -6081,7 +6056,6 @@ static struct security_operations selinux_ops = {
 	.inode_free_security =		selinux_inode_free_security,
 	.inode_init_security =		selinux_inode_init_security,
 	.inode_create =			selinux_inode_create,
-	.inode_post_create =		selinux_inode_post_create,
 	.inode_link =			selinux_inode_link,
 	.inode_unlink =			selinux_inode_unlink,
 	.inode_symlink =		selinux_inode_symlink,
@@ -6118,8 +6092,6 @@ static struct security_operations selinux_ops = {
 	.file_receive =			selinux_file_receive,
 
 	.file_open =			selinux_file_open,
-	.file_close =			selinux_file_close,
-	.allow_merge_bio =		selinux_allow_merge_bio,
 
 	.task_create =			selinux_task_create,
 	.cred_alloc_blank =		selinux_cred_alloc_blank,

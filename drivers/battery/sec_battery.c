@@ -22,6 +22,9 @@
 extern int muic_check_afc_state(int state);
 #endif
 #include <asm/div64.h>
+
+static bool slate_mode_state;
+
 enum {
 	P9220_VOUT_0V = 0,
 	P9220_VOUT_5V,
@@ -145,6 +148,9 @@ static struct device_attribute sec_battery_attrs[] = {
 	SEC_BATTERY_ATTR(fg_full_voltage),
 	SEC_BATTERY_ATTR(fg_fullcapnom),
 	SEC_BATTERY_ATTR(battery_cycle),
+#if defined(CONFIG_BATTERY_AGE_FORECAST_DETACHABLE)
+	SEC_BATTERY_ATTR(batt_after_manufactured),
+#endif
 #endif
 	SEC_BATTERY_ATTR(batt_wpc_temp),
 	SEC_BATTERY_ATTR(batt_wpc_temp_adc),
@@ -1282,7 +1288,7 @@ static void sec_bat_set_charging_status(struct sec_battery_info *battery,
 		case POWER_SUPPLY_STATUS_NOT_CHARGING:
 		case POWER_SUPPLY_STATUS_DISCHARGING:
 			if (battery->status == POWER_SUPPLY_STATUS_FULL ||
-				battery->capacity == 100) {
+				(battery->capacity == 100 && !battery->slate_mode)) {
 				value.intval = 100;
 				psy_do_property(battery->pdata->fuelgauge_name, set,
 						POWER_SUPPLY_PROP_CHARGE_FULL, value);
@@ -2032,7 +2038,7 @@ static void sec_bat_aging_check(struct sec_battery_info *battery)
 	int calc_step = -1;
 	bool ret;
 
-	if (battery->pdata->num_age_step <= 0)
+	if (battery->pdata->num_age_step <= 0 || battery->batt_cycle < 0)
 		return;
 
 	if (battery->temperature < 50) {
@@ -3045,6 +3051,9 @@ static void sec_bat_do_fullcharged(
 		value.intval = SEC_BAT_CHG_MODE_CHARGING_OFF;
 		psy_do_property(battery->pdata->charger_name, set,
 				POWER_SUPPLY_PROP_CHARGING_ENABLED, value);
+		value.intval = POWER_SUPPLY_STATUS_FULL;
+        psy_do_property(battery->pdata->fuelgauge_name, set,
+				POWER_SUPPLY_PROP_STATUS, value);
 		if (battery->cable_type == POWER_SUPPLY_TYPE_WIRELESS ||
 			battery->cable_type == POWER_SUPPLY_TYPE_PMA_WIRELESS ||
 			battery->cable_type == POWER_SUPPLY_TYPE_HV_WIRELESS ||
@@ -4327,7 +4336,11 @@ continue_monitor:
 		", HV(%s), sleep_mode(%d)"
 #endif
 #if defined(CONFIG_BATTERY_AGE_FORECAST)
+#if defined(CONFIG_BATTERY_AGE_FORECAST_DETACHABLE)
+		", Cycle(%dw)"
+#else
 		", Cycle(%d)"
+#endif
 #endif
 		 "\n", __func__,
 		 sec_bat_status_str[battery->status],
@@ -4346,8 +4359,12 @@ continue_monitor:
 			"%s: battery->stability_test(%d), battery->eng_not_full_status(%d)\n",
 			__func__, battery->stability_test, battery->eng_not_full_status);
 #endif
-	if (battery->store_mode && battery->cable_type != POWER_SUPPLY_TYPE_BATTERY) {
 
+#if defined(CONFIG_SEC_FACTORY)
+	if ((battery->cable_type != POWER_SUPPLY_TYPE_BATTERY) && (battery->cable_type != POWER_SUPPLY_TYPE_OTG)) {
+#else
+	if (battery->store_mode && battery->cable_type != POWER_SUPPLY_TYPE_BATTERY) {
+#endif
 		dev_info(battery->dev,
 			"%s: @battery->capacity = (%d), battery->status= (%d), battery->store_mode=(%d)\n",
 			__func__, battery->capacity, battery->status, battery->store_mode);
@@ -4573,6 +4590,7 @@ static void sec_bat_cable_work(struct work_struct *work)
 		sec_bat_set_charging_status(battery,
 				POWER_SUPPLY_STATUS_DISCHARGING);
 		battery->cable_type = POWER_SUPPLY_TYPE_BATTERY;
+		battery->charging_mode = SEC_BATTERY_CHARGING_NONE;
 
 		val.intval = 0;
 		psy_do_property(battery->pdata->charger_name, set,
@@ -5274,9 +5292,15 @@ ssize_t sec_bat_show_attrs(struct device *dev,
 			POWER_SUPPLY_PROP_ENERGY_NOW, value);
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n", value.intval/2);
 		break;
+#if defined(CONFIG_BATTERY_AGE_FORECAST_DETACHABLE)
+	case BATT_AFTER_MANUFACTURED:
+		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n", battery->batt_cycle);
+		break;	
+#else
 	case BATTERY_CYCLE:
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n", battery->batt_cycle);
 		break;
+#endif
 #endif
 	case BATT_WPC_TEMP:
 		if (battery->pdata->wpc_thermal_source) {
@@ -5585,6 +5609,11 @@ void update_external_temp_table(struct sec_battery_info *battery, int temp[])
 
 }
 
+bool sec_bat_get_slate_mode(void)
+{
+	return slate_mode_state;
+}
+
 ssize_t sec_bat_store_attrs(
 					struct device *dev,
 					struct device_attribute *attr,
@@ -5669,6 +5698,7 @@ ssize_t sec_bat_store_attrs(
 					__func__);
 				return -EINVAL;
 			}
+			slate_mode_state = battery->slate_mode;
 			wake_lock(&battery->cable_wake_lock);
 			queue_delayed_work_on(0, battery->monitor_wqueue,
 					   &battery->cable_work, 0);
@@ -6182,9 +6212,15 @@ ssize_t sec_bat_store_attrs(
 		break;
 	case FG_FULLCAPNOM:
 		break;
+#if defined(CONFIG_BATTERY_AGE_FORECAST_DETACHABLE)
+	case BATT_AFTER_MANUFACTURED:
+#else
 	case BATTERY_CYCLE:
+#endif
 		if (sscanf(buf, "%10d\n", &x) == 1) {
-			dev_info(battery->dev, "%s: BATTERY_CYCLE(%d)\n", __func__, x);
+			dev_info(battery->dev, "%s: %s(%d)\n", __func__,
+				(offset == BATTERY_CYCLE) ?
+				"BATTERY_CYCLE" : "BATTERY_CYCLE(W)", x);
 			if (x >= 0) {
 				int prev_battery_cycle = battery->batt_cycle;
 				battery->batt_cycle = x;
@@ -7359,6 +7395,11 @@ static int batt_handle_notification(struct notifier_block *nb,
 
 	sec_bat_set_misc_event(battery, BATT_MISC_EVENT_UNDEFINED_RANGE_TYPE,
 		(battery->muic_cable_type != ATTACHED_DEV_UNDEFINED_RANGE_MUIC));
+
+	/* showing charging icon and noti(no sound, vi, haptic) only
+	   if slow insertion is detected by MUIC */
+	sec_bat_set_misc_event(battery, BATT_MISC_EVENT_TIMEOUT_OPEN_TYPE,
+		(battery->muic_cable_type != ATTACHED_DEV_TIMEOUT_OPEN_MUIC));
 
 	if (attached_dev == ATTACHED_DEV_MHL_MUIC)
 		return 0;
@@ -8929,6 +8970,7 @@ static int sec_battery_probe(struct platform_device *pdev)
 	battery->store_mode = false;
 	battery->ignore_store_mode = false;
 	battery->slate_mode = false;
+	slate_mode_state = battery->slate_mode;
 	battery->is_hc_usb = false;
 
 	battery->safety_timer_set = true;

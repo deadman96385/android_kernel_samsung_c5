@@ -27,9 +27,6 @@
 
 #define FG_DRIVER_VER "0.0.0.1"
 // #define ENABLE_FULL_OFFSET 1
-#if defined(CONFIG_BATTERY_AGE_FORECAST)
-#define ENABLE_BATT_LONG_LIFE 1
-#endif
 
 /*To differentiate two battery Packs: SDI & ATL*/
 enum {
@@ -91,7 +88,7 @@ struct sec_fg_info {
         int battery_typ;        /*SDI_BATTERY_TYPE or ATL_BATTERY_TYPE*/
         int batt_id_adc_check;
 	int battery_table[3][16];
-#ifdef ENABLE_BATT_LONG_LIFE
+#if defined(CONFIG_BATTERY_AGE_FORECAST)
 	int v_max_table[5];
 	int q_max_table[5];
 	int v_max_now;

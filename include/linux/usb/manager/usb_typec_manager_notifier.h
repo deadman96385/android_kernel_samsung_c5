@@ -49,6 +49,7 @@ typedef enum {
 	MANAGER_NOTIFY_MUIC_CHARGER,
 	MANAGER_NOTIFY_MUIC_CPUIDLE,
 	MANAGER_NOTIFY_MUIC_CPUFREQ,
+	MANAGER_NOTIFY_MUIC_TIMEOUT_OPEN_DEVICE,
 
 /* CCIC */
 	MANAGER_NOTIFY_CCIC_INITIAL = 20,
@@ -57,7 +58,7 @@ typedef enum {
 	MANAGER_NOTIFY_CCIC_BATTERY,
 	MANAGER_NOTIFY_CCIC_PDIC,
 	MANAGER_NOTIFY_CCIC_CCIC,
-
+	MANAGER_NOTIFY_CCIC_DP,
 
 /* VBUS */
 	MANAGER_NOTIFY_VBUS_USB = 30,
@@ -82,6 +83,13 @@ typedef enum {
 	PD_TA_TYPE,
 } pd_usb_state_t;
 
+#if defined(CONFIG_VBUS_NOTIFIER)
+typedef enum {
+	EVENT_LOAD = 0,
+	EVENT_CANCEL,
+} muic_fake_event;
+#endif
+
 typedef struct
 {
 	uint64_t src:4;
@@ -105,39 +113,54 @@ typedef struct _manager_data_t
 	struct notifier_block vbus_nb;
 #endif
 
+	struct delayed_work manager_init_work;
 //	struct workqueue_struct *typec_manager_wq;
 	struct delayed_work cable_check_work;
 	struct delayed_work muic_noti_work;
 	struct delayed_work rtctime_update_work;
+#if defined(CONFIG_VBUS_NOTIFIER)
+	struct delayed_work vbus_noti_work;
+#endif
 
 	int muic_action;
 	int muic_cable_type;
 	int muic_data_refresh;
 	int muic_attach_state_without_ccic;
+#if defined(CONFIG_VBUS_NOTIFIER)
+	int muic_fake_event_wq_processing;
+#endif
 	int vbus_state;
 
 	int ccic_attach_state;	// USB_STATUS_NOTIFY_DETACH, UFP, DFP, DRP, NO_USB
 	int ccic_drp_state;
+	int ccic_rid_state;
 	int cable_type;
-	int prev_muic_cable_type;
-	bool exception_upsm_mode;
-	unsigned char usb_state[15];
-	int is_usb;
 	int usb_enum_state;
 	bool usb_enable_state;
 	int pd_con_state;
 	int water_det;
+	int wVbus_det;
 	int is_UFPS;
         void *pd;
 	int cur_rid;
+
+	int dp_attach_state;
+	int dp_cable_type;
+	int dp_hpd_state;
+	
 	int water_count;
 	int dry_count;
 	int usb210_count;
 	int usb310_count;
 	int waterChg_count;
+	int water_cable_type;
+
 	unsigned long waterDet_duration;
 	unsigned long waterDet_time;
 	unsigned long dryDet_time;
+	unsigned long wVbus_duration;
+	unsigned long wVbusHigh_time;
+	unsigned long wVbusLow_time;
 }manager_data_t;
 
 
@@ -152,5 +175,8 @@ extern void manager_notifier_test(void *);
 extern int manager_notifier_register(struct notifier_block *nb,
 		notifier_fn_t notifier, manager_notifier_device_t listener);
 extern int manager_notifier_unregister(struct notifier_block *nb);
+#if defined(CONFIG_CCIC_NOTIFIER)
+extern void manual_turn_off_usb(void);
+#endif
 
 #endif /* __USB_TYPEC_MANAGER_NOTIFIER_H__ */

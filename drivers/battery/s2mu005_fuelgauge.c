@@ -122,6 +122,32 @@ static int s2mu005_read_reg(struct i2c_client *client, int reg, u8 *buf)
 	return ret;
 }
 
+static void s2mu005_fg_test_read(struct i2c_client *client)
+{
+	u8 data;
+	char str[1016] = {0,};
+	int i;
+
+	/* address 0x00 ~ 0x1f */
+	for (i = 0x0; i <= 0x1F; i++) {
+		s2mu005_read_reg_byte(client, i, &data);
+		sprintf(str+strlen(str), "0x%02x:0x%02x, ", i, data);
+	}
+
+	/* address 0x27 */
+	s2mu005_read_reg_byte(client, 0x27, &data);
+	sprintf(str+strlen(str),"0x27:0x%02x, ",data);
+
+	/* address 0x44, 0x45 */
+	for (i = 0x44; i <= 0x45; i++) {
+		s2mu005_read_reg_byte(client, i, &data);
+		sprintf(str+strlen(str), "0x%02x:0x%02x, ", i, data);
+	}
+
+	/* print buffer */
+	pr_info("[FG]%s: %s\n", __func__, str);
+}
+
 static void WA_0_issue_at_init(struct s2mu005_fuelgauge_data *fuelgauge)
 {
 	int a = 0;
@@ -831,6 +857,10 @@ static int s2mu005_get_rawsoc(struct s2mu005_fuelgauge_data *fuelgauge)
 		/* ------ read remaining capacity -------- */
 	}
 
+	/* S2MU005 FG debug */
+	if(fuelgauge->pdata->fg_log_enable)
+		s2mu005_fg_test_read(fuelgauge->i2c);
+
 	return min(fuelgauge->info.soc, 10000);
 
 err:
@@ -1494,6 +1524,11 @@ static int s2mu005_fuelgauge_parse_dt(struct s2mu005_fuelgauge_data *fuelgauge)
 		if (ret < 0)
 			pr_err("%s error reading capacity_calculation_type %d\n",
 					__func__, ret);
+
+		ret = of_property_read_u32(np, "fuelgauge,fg_log_enable",
+				&fuelgauge->pdata->fg_log_enable);
+		if (ret < 0)
+			pr_err("%s fg_log_disabled %d\n", __func__, ret);
 
 		ret = of_property_read_u32(np, "fuelgauge,fuel_alert_soc",
 				&fuelgauge->pdata->fuel_alert_soc);

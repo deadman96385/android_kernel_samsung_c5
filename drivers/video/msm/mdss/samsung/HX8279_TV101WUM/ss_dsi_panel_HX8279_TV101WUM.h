@@ -37,6 +37,5 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
 #define HX8279_TV101WUM_SUPPORT_PANEL_COUNT 1
 #define LCD_DEFAUL_BL_LEVEL 89
 
-extern int isl98608_backlight_control(struct mdss_dsi_ctrl_pdata *ctrl, int enable);
-extern int isl98608_backlight_control_post(struct mdss_dsi_ctrl_pdata *ctrl, int enable);
+extern int isl98608_panel_power(struct mdss_dsi_ctrl_pdata *ctrl, int enable);
 #endif

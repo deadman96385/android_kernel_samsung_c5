@@ -25,7 +25,9 @@
 #include <linux/mount.h>
 #include <linux/personality.h>
 #include <linux/backing-dev.h>
+#include <linux/pfk.h>
 #include <net/flow.h>
+#include <linux/task_integrity.h>
 
 #define MAX_LSM_EVM_XATTR	2
 
@@ -241,6 +243,9 @@ int security_bprm_check(struct linux_binprm *bprm)
 	int ret;
 
 	ret = security_ops->bprm_check_security(bprm);
+	if (ret)
+		return ret;
+	ret = five_bprm_check(bprm);
 	if (ret)
 		return ret;
 	return ima_bprm_check(bprm);
@@ -492,6 +497,7 @@ int security_path_chown(struct path *path, kuid_t uid, kgid_t gid)
 		return 0;
 	return security_ops->path_chown(path, uid, gid);
 }
+EXPORT_SYMBOL(security_path_chown);
 
 int security_path_chroot(struct path *path)
 {
@@ -632,6 +638,9 @@ int security_inode_setxattr(struct dentry *dentry, const char *name,
 	ret = security_ops->inode_setxattr(dentry, name, value, size, flags);
 	if (ret)
 		return ret;
+	ret = five_inode_setxattr(dentry, name, value, size);
+	if (ret)
+		return ret;
 	ret = ima_inode_setxattr(dentry, name, value, size);
 	if (ret)
 		return ret;
@@ -668,6 +677,9 @@ int security_inode_removexattr(struct dentry *dentry, const char *name)
 	if (unlikely(IS_PRIVATE(dentry->d_inode)))
 		return 0;
 	ret = security_ops->inode_removexattr(dentry, name);
+	if (ret)
+		return ret;
+	ret = five_inode_removexattr(dentry, name);
 	if (ret)
 		return ret;
 	ret = ima_inode_removexattr(dentry, name);
@@ -781,6 +793,9 @@ int security_mmap_file(struct file *file, unsigned long prot,
 					mmap_prot(file, prot), flags);
 	if (ret)
 		return ret;
+	ret = five_file_mmap(file, prot);
+	if (ret)
+		return ret;
 	return ima_file_mmap(file, prot);
 }
 
@@ -832,20 +847,14 @@ int security_file_open(struct file *file, const struct cred *cred)
 	return fsnotify_perm(file, MAY_OPEN);
 }
 
-int security_file_close(struct file *file)
-{
-	if (security_ops->file_close)
-		return security_ops->file_close(file);
-
-	return 0;
-}
-
 bool security_allow_merge_bio(struct bio *bio1, struct bio *bio2)
 {
-	if (security_ops->allow_merge_bio)
-		return security_ops->allow_merge_bio(bio1, bio2);
+	bool ret = pfk_allow_merge_bio(bio1, bio2);
 
-	return true;
+	if (security_ops->allow_merge_bio)
+		ret = ret && security_ops->allow_merge_bio(bio1, bio2);
+
+	return ret;
 }
 
 int security_task_create(unsigned long clone_flags)
@@ -859,6 +868,7 @@ void security_task_free(struct task_struct *task)
 	yama_task_free(task);
 #endif
 	security_ops->task_free(task);
+	five_task_free(task);
 }
 
 int security_cred_alloc_blank(struct cred *cred, gfp_t gfp)

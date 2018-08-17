@@ -70,6 +70,7 @@
 #define MSMFB_LPM_ENABLE	_IOWR(MSMFB_IOCTL_MAGIC, 170, unsigned int)
 #define MSMFB_MDP_PP_GET_FEATURE_VERSION _IOWR(MSMFB_IOCTL_MAGIC, 171, \
 					      struct mdp_pp_feature_version)
+#define MSMFB_DISABLE_CLOCK_GATE  _IOW(MSMFB_IOCTL_MAGIC, 172, unsigned int)
 
 #define FB_TYPE_3D_PANEL 0x10101010
 #define MDP_IMGTYPE2_START 0x10000
@@ -1368,11 +1369,20 @@ enum {
 	MDP_WRITEBACK_MIRROR_RESUME,
 };
 
+/*
+ * The enum values are continued below as preprocessor macro definitions
+ */
 enum mdp_color_space {
 	MDP_CSC_ITU_R_601,
 	MDP_CSC_ITU_R_601_FR,
 	MDP_CSC_ITU_R_709,
 };
+
+/*
+ * These definitions are a continuation of the mdp_color_space enum above
+ */
+#define MDP_CSC_ITU_R_2020	(MDP_CSC_ITU_R_709 + 1)
+#define MDP_CSC_ITU_R_2020_FR	(MDP_CSC_ITU_R_2020 + 1)
 
 enum {
 	mdp_igc_v1_7 = 1,

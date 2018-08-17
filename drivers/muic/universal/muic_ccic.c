@@ -36,6 +36,7 @@
 
 #include <linux/ccic/s2mm005.h>
 #include <linux/muic/muic.h>
+#include <linux/usb_notify.h>
 #if defined(CONFIG_MUIC_NOTIFIER)
 #include <linux/muic/muic_notifier.h>
 #endif
@@ -298,6 +299,7 @@ static void mdev_handle_ccic_detach(muic_data_t *pmuic)
 	pmuic->is_ccic_attach = false;
 #if defined(CONFIG_MUIC_UNIVERSAL_SM5705_AFC)	
 	pmuic->retry_afc = false;
+	pmuic->afc_retry_count = 0;
 #endif	
 #if defined(CONFIG_MAX77854_HV)
 	pmuic->phv->attached_dev = 0;
@@ -515,9 +517,13 @@ static int muic_handle_ccic_ATTACH(muic_data_t *pmuic, CC_NOTI_ATTACH_TYPEDEF *p
 	int vbus = mdev_get_vbus(pmuic);
 	struct vendor_ops *pvendor = pmuic->regmapdesc->vendorops;
 	int prev_status = pdesc->ccic_evt_attached;
+#if defined(CONFIG_MUIC_UNIVERSAL_SM5703)
+	int is_UPSM = 0;
+	struct otg_notify *o_notify = get_otg_notify();
+#endif
 
-	pr_info("%s: src:%d dest:%d id:%d attach:%d cable_type:%d rprd:%d retry_afc:%d\n", __func__,
-		pnoti->src, pnoti->dest, pnoti->id, pnoti->attach, pnoti->cable_type, pnoti->rprd, pmuic->retry_afc);
+	pr_info("%s: src:%d dest:%d id:%d attach:%d cable_type:%d rprd:%d\n", __func__,
+		pnoti->src, pnoti->dest, pnoti->id, pnoti->attach, pnoti->cable_type, pnoti->rprd);
 
 	pdesc->ccic_evt_attached = pnoti->attach ? 
 		MUIC_CCIC_NOTI_ATTACH : MUIC_CCIC_NOTI_DETACH;
@@ -537,16 +543,28 @@ static int muic_handle_ccic_ATTACH(muic_data_t *pmuic, CC_NOTI_ATTACH_TYPEDEF *p
 		}
 
 		if (pnoti->rprd) {
+#if defined(CONFIG_MUIC_UNIVERSAL_SM5703)
+			mdelay(50);
+#endif
 			pr_info("%s: RPRD\n", __func__);
 			pdesc->ccic_evt_rprd = 1;
 			if (pvendor && pvendor->enable_chgdet)
 				pvendor->enable_chgdet(pmuic->regmapdesc, 0);
 			pdesc->mdev = ATTACHED_DEV_OTG_MUIC;
+
+			mdev_com_to(pmuic, MUIC_PATH_USB_AP);
+
+#if defined(CONFIG_MUIC_UNIVERSAL_SM5703)
+			is_UPSM = is_blocked(o_notify, NOTIFY_BLOCK_TYPE_ALL);
+			if (is_UPSM) {
+				pr_info("%s: is_UPSM (%d)\n", __func__, is_UPSM);
+				return 0;
+			}
+#endif
 #if defined(CONFIG_MUIC_SM570X_SWITCH_CONTROL_GPIO)
 /* set USB_ID pin high to let MUIC doesn't do BC1.2 charging when OTG connected*/
 			muic_GPIO_control(1);
 #endif
-			mdev_com_to(pmuic, MUIC_PATH_USB_AP);
 			mdev_noti_attached(pdesc->mdev);
 			return 0;
 		}

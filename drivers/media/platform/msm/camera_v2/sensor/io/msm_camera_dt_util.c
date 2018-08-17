@@ -70,6 +70,7 @@ int msm_camera_fill_vreg_params(struct camera_vreg_t *cam_vreg,
 			if (j == num_vreg)
 				power_setting[i].seq_val = INVALID_VREG;
 			break;
+#if defined(CONFIG_SEC_C5PROLTE_CHN) || defined(CONFIG_SEC_C7PROLTE_CHN)
 		case CAM_VT_VDIG:
 			for (j = 0; j < num_vreg; j++) {
 				if (!strcmp(cam_vreg[j].reg_name, "cam_vt_vdig")) {
@@ -89,7 +90,9 @@ int msm_camera_fill_vreg_params(struct camera_vreg_t *cam_vreg,
 			}
 			if (j == num_vreg)
 				power_setting[i].seq_val = INVALID_VREG;
-			break;	
+			break;
+#endif
+
 		case CAM_VIO:
 			for (j = 0; j < num_vreg; j++) {
 				if (!strcmp(cam_vreg[j].reg_name, "cam_vio")) {

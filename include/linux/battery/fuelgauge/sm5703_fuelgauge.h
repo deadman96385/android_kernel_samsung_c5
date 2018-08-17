@@ -92,8 +92,13 @@ struct sec_fg_info {
 	int batt_id_adc_check;
 	int battery_table[3][16];
 #ifdef ENABLE_BATT_LONG_LIFE
+#ifdef CONFIG_BATTERY_AGE_FORECAST_DETACHABLE
+	int v_max_table[3];
+	int q_max_table[3];
+#else
 	int v_max_table[5];
 	int q_max_table[5];
+#endif
 	int v_max_now;
 	int q_max_now;
 #endif

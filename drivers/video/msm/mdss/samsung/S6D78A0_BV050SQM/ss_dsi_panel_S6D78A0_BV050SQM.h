@@ -38,6 +38,5 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
 #define S6D78A0_BV050SQM_SUPPORT_PANEL_COUNT 1
 #define MAX_BRIGHTNESS_IN_BLU 32
 #define BLIC_DEFAULT_SCALED_LEVEL 15
-#define BLIC_ENABLE_PIN 44
 
 #endif

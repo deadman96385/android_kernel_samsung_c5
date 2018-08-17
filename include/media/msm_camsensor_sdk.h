@@ -119,7 +119,9 @@ enum msm_sensor_power_seq_gpio_t {
 
 enum msm_camera_vreg_name_t {
 	CAM_VDIG,
+#if defined(CONFIG_SEC_C5PROLTE_CHN) || defined(CONFIG_SEC_C7PROLTE_CHN)
 	CAM_VT_VDIG,
+#endif
 	CAM_VIO,
 	CAM_VANA,
 	CAM_VT_VANA,

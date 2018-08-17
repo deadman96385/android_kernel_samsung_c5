@@ -401,7 +401,7 @@ static ssize_t magnetic_get_selftest(struct device *dev,
 	msg->buffer = chTempBuf;
 	msg->free_buffer = 0;
 
-	iRet = ssp_spi_sync(data, msg, 1000);
+	iRet = ssp_spi_sync(data, msg, 2000);
 
 	if (iRet != SUCCESS) {
 		pr_err("[SSP]: %s - Magnetic Selftest Timeout!! %d\n", __func__, iRet);
@@ -412,8 +412,8 @@ static ssize_t magnetic_get_selftest(struct device *dev,
 	x_diff = ((s16)(chTempBuf[2] << 8)) + chTempBuf[1];
 	y_diff = ((s16)(chTempBuf[4] << 8)) + chTempBuf[3];
 	z_diff = ((s16)(chTempBuf[6] << 8)) + chTempBuf[5];
-	diff_max = ((s16)(chTempBuf[8] << 8)) + chTempBuf[7];
-	diff_min = ((s16)(chTempBuf[10] << 8)) + chTempBuf[9];
+	diff_min = ((s16)(chTempBuf[8] << 8)) + chTempBuf[7];
+	diff_max = ((s16)(chTempBuf[10] << 8)) + chTempBuf[9];
 	result = chTempBuf[10];
 	
 	if(id != 0x1)
@@ -429,11 +429,12 @@ static ssize_t magnetic_get_selftest(struct device *dev,
 
 	pr_info("[SSP] %s\n"
 		"[SSP] Test1 - err = %d, id = %d \n"
-		"[SSP] Test2 - err = %d, x_diff = %d \n"
-		"[SSP] Test3 - err = %d, y_diff = %d \n"
-		"[SSP] Test4 - err = %d, z_diff = %d \n"
-		"[SSP] Test5 - err = %d, result = %d d\n",
-		__func__, err[0], id, err[1], x_diff, err[2], y_diff, err[3], z_diff, err[4], result);
+		"[SSP] Test2 - diff_min = %d, diff_max = %d \n"
+		"[SSP] Test3 - err = %d, x_diff = %d \n"
+		"[SSP] Test4 - err = %d, y_diff = %d \n"
+		"[SSP] Test5 - err = %d, z_diff = %d \n"
+		"[SSP] Test6 - err = %d, result = %d \n",
+		__func__, err[0], id, diff_min, diff_max, err[1], x_diff, err[2], y_diff, err[3], z_diff, err[4], result);
 
 exit:
 	return sprintf(buf,

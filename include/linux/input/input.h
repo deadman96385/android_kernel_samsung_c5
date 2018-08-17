@@ -13,8 +13,10 @@
 #undef pr_debug
 #define pr_debug   if(debug_flag) printk
 
-#define MAX_MULTI_TOUCH_EVENTS		3
+#define MAX_MULTI_TOUCH_EVENTS		10
 #define MAX_EVENTS			MAX_MULTI_TOUCH_EVENTS * 10
+
+#define INPUT_BOOSTER_NULL	0
 
 #define HEADGAGE "******"
 #define TAILGAGE "****  "
@@ -55,6 +57,10 @@
 #endif
 
 #define SET_BOOSTER  { \
+	int freq = -1;\
+	_this->level++; \
+	MAX_T_INPUT_BOOSTER(freq, cpu_freq); \
+	pr_debug("[Input Booster2] %s      set_freq_limit : %d\n", glGage, freq); \
 	set_hmp(_this->param[_this->index].hmp_boost); \
 	set_qos(&_this->cpu_qos, /*PM_QOS_CPU_FREQ_MIN*/PM_QOS_CLUSTER1_FREQ_MIN, _this->param[_this->index].cpu_freq);  \
 	set_qos(&_this->kfc_qos, /*PM_QOS_KFC_FREQ_MIN*/PM_QOS_CLUSTER0_FREQ_MIN, _this->param[_this->index].kfc_freq);  \
@@ -62,6 +68,10 @@
 	set_qos(&_this->int_qos, PM_QOS_DEVICE_THROUGHPUT, _this->param[_this->index].int_freq);  \
 }
 #define REMOVE_BOOSTER  { \
+	int freq = -1;\
+	_this->level = -1; \
+	MAX_T_INPUT_BOOSTER(freq, cpu_freq); \
+	pr_debug("[Input Booster2] %s      set_freq_limit : %d\n", glGage, freq); \
 	set_hmp(0);  \
 	remove_qos(&_this->cpu_qos);  \
 	remove_qos(&_this->kfc_qos);  \
@@ -117,7 +127,7 @@
 }
 
 #elif defined(CONFIG_ARCH_MSM) //______________________________________________________________________________
-
+static struct pm_qos_request lpm_bias_pm_qos_request;
 #ifdef USE_HMP_BOOST
 #define set_hmp(enable)	 { \
 	if(enable != current_hmp_boost) { \
@@ -143,27 +153,67 @@ int set_freq_limit(unsigned long id, unsigned int freq)
 
 #ifdef CONFIG_DEBUG_BUS_VOTER
 #define SET_BOOSTER  { \
+	int value = 0;\
 	pr_debug("[Input Booster2] %s      set_freq_limit : %d, msm_bus_floor_vote : %d\n", glGage, _this->param[_this->index].cpu_freq, _this->param[_this->index].bimc_freq); \
 	set_hmp(_this->param[_this->index].hmp_boost); \
 	set_freq_limit(DVFS_TOUCH_ID, _this->param[_this->index].cpu_freq);  \
 	msm_bus_floor_vote("bimc", _this->param[_this->index].bimc_freq * 1000);  \
+	 \
+	MAX_T_INPUT_BOOSTER(value, lpm_bias);  \
+	if (value == INPUT_BOOSTER_NULL) { \
+		value = 0; \
+	} \
+	pm_qos_update_request(&lpm_bias_pm_qos_request, value);\
 }
 #define REMOVE_BOOSTER  { \
+	int value = 0;\
 	pr_debug("[Input Booster2] %s      set_freq_limit : %d, msm_bus_floor_vote : %d\n", glGage, -1, 0); \
 	set_hmp(0); \
 	set_freq_limit(DVFS_TOUCH_ID, -1);  \
 	msm_bus_floor_vote("bimc", 0);  \
+	 \
+	MAX_T_INPUT_BOOSTER(value, lpm_bias);  \
+	if (value == INPUT_BOOSTER_NULL) { \
+		value = 0; \
+	} \
+	pm_qos_update_request(&lpm_bias_pm_qos_request, value);\
 }
 #else
 #define SET_BOOSTER  { \
-	pr_debug("[Input Booster2] %s      set_freq_limit : %d\n", glGage, _this->param[_this->index].cpu_freq); \
-	set_hmp(_this->param[_this->index].hmp_boost); \
-	set_freq_limit(DVFS_TOUCH_ID, _this->param[_this->index].cpu_freq);  \
+	int value = 0;\
+	int freq = -1;\
+	_this->level++; \
+	if(_this->param[_this->level].hmp_boost != 0){ \
+		set_hmp(_this->param[_this->level].hmp_boost); \
+	}else if(_this->level > 0){ \
+		set_hmp(-((int)_this->param[_this->level-1].hmp_boost)); \
+	} \
+	MAX_T_INPUT_BOOSTER(freq, cpu_freq); \
+	pr_debug("[Input Booster2] %s      set_freq_limit : %d\n", glGage, freq); \
+	set_freq_limit(DVFS_TOUCH_ID, freq);  \
+	 \
+	MAX_T_INPUT_BOOSTER(value, lpm_bias);  \
+	if (value == INPUT_BOOSTER_NULL) { \
+		value = 0; \
+	} \
+	pm_qos_update_request(&lpm_bias_pm_qos_request, value);\
 }
 #define REMOVE_BOOSTER  { \
-	pr_debug("[Input Booster2] %s      set_freq_limit : %d\n", glGage, -1); \
-	set_hmp(0); \
-	set_freq_limit(DVFS_TOUCH_ID, -1);  \
+	int value = 0;\
+	int freq = -1;\
+	if(_this->level >= 0){ \
+		set_hmp(-((int)_this->param[_this->level].hmp_boost)); \
+	} \
+	_this->level = -1; \
+	MAX_T_INPUT_BOOSTER(freq, cpu_freq); \
+	pr_debug("[Input Booster2] %s      set_freq_limit : %d\n", glGage, freq); \
+	set_freq_limit(DVFS_TOUCH_ID, freq);  \
+	 \
+	MAX_T_INPUT_BOOSTER(value, lpm_bias);  \
+	if (value == INPUT_BOOSTER_NULL) { \
+		value = 0; \
+	} \
+	pm_qos_update_request(&lpm_bias_pm_qos_request, value);\
 }
 #endif
 #define PROPERTY_BOOSTER(_device_param_, _dt_param_, _time_)  { \
@@ -171,17 +221,20 @@ int set_freq_limit(unsigned long id, unsigned int freq)
 	_device_param_.bimc_freq = _dt_param_.bimc_freq; \
 	_device_param_.time = _dt_param_._time_; \
 	_device_param_.hmp_boost = _dt_param_.hmp_boost; \
+	_device_param_.lpm_bias = _dt_param_.lpm_bias; \
 }
 #define SYSFS_DEFINE(_A_, _B_) \
 	_A_ cpu_freq _B_ ; \
 	_A_ bimc_freq _B_ ; \
 	_A_ hmp_boost _B_ ; \
+	_A_ lpm_bias _B_ ; \
 	_A_ head_time _B_ ; \
 	_A_ tail_time _B_ ; 
 #define SYSFS_COPY_TO_FROM(_A_, _B_) { \
 	_A_ cpu_freq = (*cpu_freq == (unsigned int)(-1)) ? _B_ cpu_freq : *cpu_freq; \
 	_A_ bimc_freq = (*bimc_freq == (unsigned int)(-1)) ? _B_ bimc_freq : *bimc_freq; \
 	_A_ hmp_boost = (*hmp_boost == (unsigned int)(-1)) ? _B_ hmp_boost : *hmp_boost; \
+	_A_ lpm_bias = (*lpm_bias == (unsigned int)(-1)) ? _B_ lpm_bias : *lpm_bias; \
 	_A_ head_time = (*head_time == (unsigned int)(-1)) ? _B_ head_time : *head_time; \
 	_A_ tail_time = (*tail_time == (unsigned int)(-1)) ? _B_ tail_time : *tail_time; \
 }
@@ -189,6 +242,7 @@ int set_freq_limit(unsigned long id, unsigned int freq)
 	cpu_freq = _A_ cpu_freq; \
 	bimc_freq = _A_ bimc_freq; \
 	hmp_boost = _A_ hmp_boost; \
+	lpm_bias = _A_ lpm_bias; \
 	head_time = _A_ head_time; \
 	tail_time = _A_ tail_time; \
 }
@@ -196,6 +250,7 @@ int set_freq_limit(unsigned long id, unsigned int freq)
 	err |= of_property_read_u32_index(cnp, "input_booster,cpu_freqs", i, &dt_infor->param_tables[i].cpu_freq); \
 	err |= of_property_read_u32_index(cnp, "input_booster,bimc_freqs", i, &dt_infor->param_tables[i].bimc_freq); \
 	err |= of_property_read_u32_index(cnp, "input_booster,hmp_boost", i, &temp); dt_infor->param_tables[i].hmp_boost = (u8)temp; \
+	err |= of_property_read_u32_index(cnp, "input_booster,lpm_bias", i, &temp); dt_infor->param_tables[i].lpm_bias = (u8)temp; \
 	err |= of_property_read_u32_index(cnp, "input_booster,head_times", i, &temp); dt_infor->param_tables[i].head_time = (u16)temp; \
 	err |= of_property_read_u32_index(cnp, "input_booster,tail_times", i, &temp); dt_infor->param_tables[i].tail_time = (u16)temp; \
 }
@@ -256,6 +311,9 @@ int set_freq_limit(unsigned long id, unsigned int freq)
 	_DEVICE_##_booster.multi_events = 0; \
 	{ \
 		int i; \
+		for(i=0;i<sizeof(_DEVICE_##_booster.param)/sizeof(struct t_input_booster_param);i++){ \
+			_DEVICE_##_booster.level = -1; \
+		} \
 		for(i=0;i<ndevice_in_dt;i++) { \
 			if(device_tree_infor[i].type == _DEVICE_##_booster_dt.type) { \
 				struct t_input_booster_device_tree_gender *dt_gender = &_DEVICE_##_booster_dt; \
@@ -327,6 +385,9 @@ static void input_booster_##_DEVICE_##_set_booster_work_func(struct work_struct 
 #define RUN_BOOSTER(_DEVICE_, _EVENT_) { \
 	if(_DEVICE_##_booster_dt.level > 0) { \
 		_DEVICE_##_booster.event_type = _EVENT_; \
+		if(_EVENT_ == BOOSTER_ON){ \
+			_DEVICE_##_booster.level = -1; \
+		} \
 		(_EVENT_ == BOOSTER_ON)  ? _DEVICE_##_booster.multi_events++ : _DEVICE_##_booster.multi_events--; \
 		schedule_work(&_DEVICE_##_booster.input_booster_set_booster_work); \
 	} \
@@ -428,7 +489,7 @@ static void input_booster_##_DEVICE_##_set_booster_work_func(struct work_struct 
 			return  count; \
 		} \
 		if (len != _COUNT_) { \
-			pr_debug("### Keep this format : [level cpu_freq kfc_freq mif_freq int_freq hmp_boost] (Ex: 1 1600000 0 1500000 667000 333000 1###\n"); \
+			pr_debug("### Keep this format : [level cpu_freq kfc_freq mif_freq int_freq hmp_boost lpm_bias] (Ex: 1 1600000 0 1500000 667000 333000 1 5###\n"); \
 			pr_debug("### Keep this format : [level head_time tail_time phase_time] (Ex: 1 130 500 50 ###\n"); \
 			pr_debug("### Keep this format : [type value] (Ex: 2 1 ###\n"); \
 			return count; \
@@ -499,6 +560,7 @@ struct t_input_booster_param {
 	u32 bimc_freq;
 
 	u8 hmp_boost;
+	u8 lpm_bias;
 	u16 time;
 #endif //______________________________________________________________________________
 };
@@ -521,6 +583,7 @@ struct t_input_booster {
 	int multi_events;
 	int event_type;
 	int change_on_release;
+	int level;
 
 	void (*input_booster_state)(void *__this, int input_booster_event);
 };
@@ -542,6 +605,7 @@ struct t_input_booster_device_tree_param {
 	u32     int_freq;
 #elif defined(CONFIG_ARCH_MSM) //______________________________________________________________________________
 	u8      hmp_boost;
+	u8      lpm_bias;
 
 	u16 	head_time;
 	u16 	tail_time;
@@ -569,15 +633,15 @@ struct t_input_booster_device_tree_gender {
 //______________________________________________________________________________	<<< in DTSI file >>>
 //______________________________________________________________________________	input_booster,type = <4>;	/* BOOSTER_DEVICE_KEYBOARD */
 //______________________________________________________________________________
-struct t_input_booster_device_tree_gender	touch_booster_dt = {2,2,};		// type : 2,  level : 2
-struct t_input_booster_device_tree_gender	multitouch_booster_dt = {3,1,};		// type : 3,  level : 1
 struct t_input_booster_device_tree_gender	key_booster_dt = {0,1,};		// type : 0,  level : 1
 struct t_input_booster_device_tree_gender	touchkey_booster_dt = {1,1,};		// type : 1,  level : 1
+struct t_input_booster_device_tree_gender	touch_booster_dt = {2,2,};		// type : 2,  level : 2
+struct t_input_booster_device_tree_gender	multitouch_booster_dt = {3,1,};		// type : 3,  level : 1
 struct t_input_booster_device_tree_gender	keyboard_booster_dt = {4,1,};		// type : 4,  level : 1
 struct t_input_booster_device_tree_gender	mouse_booster_dt = {5,1,};		// type : 5,  level : 1
 struct t_input_booster_device_tree_gender	mouse_wheel_booster_dt = {6,1,};	// type : 6,  level : 1
-struct t_input_booster_device_tree_gender	pen_booster_dt = {7,1,};		// type : 7,  level : 1
 struct t_input_booster_device_tree_gender	hover_booster_dt = {7,1,};		// type : 7,  level : 1
+struct t_input_booster_device_tree_gender	pen_booster_dt = {8,1,};			// type : 8,  level : 1
 struct t_input_booster_device_tree_infor	*device_tree_infor = NULL;
 
 int ndevice_in_dt;
@@ -596,11 +660,11 @@ SYSFS_DEVICE(freq, (buf, "%d %u %u %u %u %u\n", level, cpu_freq, kfc_freq, mif_f
 SYSFS_DEVICE(time, (buf, "%d %u %u %u\n", level, head_time, tail_time, phase_time), 4)
 #elif defined(CONFIG_ARCH_MSM) //______________________________________________________________________________
 SYSFS_CLASS(debug_level, (buf, "%u\n", debug_level), 1)
-SYSFS_CLASS(head, (buf, "%u %u %u %u\n", head_time, cpu_freq, bimc_freq, hmp_boost), 4)
-SYSFS_CLASS(tail, (buf, "%u %u %u %u\n", tail_time, cpu_freq, bimc_freq, hmp_boost), 4)
+SYSFS_CLASS(head, (buf, "%u %u %u %u %u\n", head_time, cpu_freq, bimc_freq, hmp_boost, lpm_bias), 5)
+SYSFS_CLASS(tail, (buf, "%u %u %u %u %u\n", tail_time, cpu_freq, bimc_freq, hmp_boost, lpm_bias), 5)
 SYSFS_CLASS(level, (buf, "%d\n", level), 1)
 SYSFS_DEVICE(level, (buf, "%d\n", level), 1)
-SYSFS_DEVICE(freq, (buf, "%d %u %u %u\n", level, cpu_freq, bimc_freq, hmp_boost), 4)
+SYSFS_DEVICE(freq, (buf, "%d %u %u %u %u\n", level, cpu_freq, bimc_freq, hmp_boost, lpm_bias), 5)
 SYSFS_DEVICE(time, (buf, "%d %u %u\n", level, head_time, tail_time), 3)
 #endif //______________________________________________________________________________
 static ssize_t input_booster_sysfs_device_store_control(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) { 
@@ -641,15 +705,45 @@ int TouchIDs[MAX_MULTI_TOUCH_EVENTS];
 char *glGage = HEADGAGE;
 bool current_hmp_boost = 0;
 
-struct t_input_booster	touch_booster;
-struct t_input_booster	multitouch_booster;
 struct t_input_booster	key_booster;
 struct t_input_booster	touchkey_booster;
+struct t_input_booster	touch_booster;
+struct t_input_booster	multitouch_booster;
 struct t_input_booster	keyboard_booster;
 struct t_input_booster	mouse_booster;
 struct t_input_booster	mouse_wheel_booster;
-struct t_input_booster	pen_booster;
 struct t_input_booster	hover_booster;
+struct t_input_booster	pen_booster;
+
+struct t_input_booster *t_input_boosters[] = {
+	&key_booster,
+	&touchkey_booster,
+	&touch_booster,
+	&multitouch_booster,
+	&keyboard_booster,
+	&mouse_booster,
+	&mouse_wheel_booster,
+	&hover_booster,
+	&pen_booster
+};
+
+#define MAX_T_INPUT_BOOSTER(ref, _PARAM_) { \
+		int i = 0; \
+		u32 max = INPUT_BOOSTER_NULL; \
+		for(i = 0; i < sizeof(t_input_boosters)/sizeof(struct t_input_booster*); i++){ \
+			pr_debug("[Input Booster3] booster type : %d    level : %d\n", i, t_input_boosters[i]->level); \
+			if( t_input_boosters[i]->level >= 0 && t_input_boosters[i]->level < (int)(sizeof(t_input_boosters[i]->param)/sizeof(struct t_input_booster_param))){ \
+				if(max < (int)t_input_boosters[i]->param[t_input_boosters[i]->level]._PARAM_){ \
+					max = t_input_boosters[i]->param[t_input_boosters[i]->level]._PARAM_; \
+				} \
+			} \
+		} \
+		if(max == INPUT_BOOSTER_NULL){ \
+			ref = -1; \
+		} else { \
+			ref = max; \
+		} \
+	} \
 
 int input_count = 0, key_back = 0, key_home = 0, key_recent = 0;
 

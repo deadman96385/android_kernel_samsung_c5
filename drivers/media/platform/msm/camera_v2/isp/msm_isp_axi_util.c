@@ -64,7 +64,7 @@ int msm_isp_axi_create_stream(struct vfe_device *vfe_dev,
 	struct msm_vfe_axi_shared_data *axi_data,
 	struct msm_vfe_axi_stream_request_cmd *stream_cfg_cmd)
 {
-	int i = stream_cfg_cmd->stream_src;
+	uint32_t i = stream_cfg_cmd->stream_src;
 
 	if (i >= VFE_AXI_SRC_MAX) {
 		pr_err("%s:%d invalid stream_src %d\n", __func__, __LINE__,
@@ -558,7 +558,9 @@ void msm_isp_update_framedrop_reg(struct vfe_device *vfe_dev,
 		spin_lock_irqsave(&stream_info->lock, flags);
 
 		if (BURST_STREAM == stream_info->stream_type) {
-			if (0 == stream_info->runtime_num_burst_capture)
+			if (0 == stream_info->runtime_num_burst_capture ||
+				(stream_info->runtime_num_burst_capture == 1 &&
+				stream_info->activated_framedrop_period == 1))
 				stream_info->current_framedrop_period =
 					MSM_VFE_STREAM_STOP_PERIOD;
 		}
@@ -1414,7 +1416,9 @@ void msm_isp_halt_send_error(struct vfe_device *vfe_dev, uint32_t event)
 	uint32_t i = 0;
 	struct msm_isp_event_data error_event;
 	struct msm_vfe_axi_halt_cmd halt_cmd;
-
+	
+	if (atomic_read(&vfe_dev->error_info.overflow_state) != NO_OVERFLOW) 
+		return;
 	if (ISP_EVENT_PING_PONG_MISMATCH == event &&
 		vfe_dev->axi_data.recovery_count < MAX_RECOVERY_THRESHOLD) {
 		pr_err("%s:pingpong mismatch from vfe%d, core%d,recovery_count %d\n",
@@ -1695,7 +1699,7 @@ static void msm_isp_handle_done_buf_frame_id_mismatch(
 {
 	struct msm_isp_event_data error_event;
 	int ret = 0;
-
+	memset(&error_event, 0, sizeof(error_event));
 	error_event.frame_id =
 		vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id;
 	error_event.u.error_info.err_type =
@@ -1719,7 +1723,7 @@ static int msm_isp_process_done_buf(struct vfe_device *vfe_dev,
 	struct msm_vfe_axi_stream *stream_info, struct msm_isp_buffer *buf,
 	struct timeval *time_stamp, uint32_t frame_id)
 {
-	int rc, ret;
+	int rc;
 	unsigned long flags;
 	struct msm_isp_event_data buf_event;
 	uint32_t stream_idx = HANDLE_TO_IDX(stream_info->stream_handle);
@@ -1781,7 +1785,7 @@ static int msm_isp_process_done_buf(struct vfe_device *vfe_dev,
 		if (rc == -EFAULT) {
 			msm_isp_halt_send_error(vfe_dev,
 					ISP_EVENT_BUF_FATAL_ERROR);
-			return ret;
+			return rc;
 		}
 		if (!rc) {
 			ISP_DBG("%s:%d vfe_id %d Buffer dropped %d\n",
@@ -1837,7 +1841,7 @@ static int msm_isp_process_done_buf(struct vfe_device *vfe_dev,
 		if (rc == -EFAULT) {
 			msm_isp_halt_send_error(vfe_dev,
 					ISP_EVENT_BUF_FATAL_ERROR);
-			return ret;
+			return rc;
 		}
 	}
 
@@ -2219,20 +2223,6 @@ int msm_isp_axi_halt(struct vfe_device *vfe_dev,
 		}
 #endif
 	}
-	
-	if (halt_cmd->overflow_detected) {
-		/*Store current IRQ mask*/
-		if (vfe_dev->error_info.overflow_recover_irq_mask0 == 0) {
-			vfe_dev->hw_info->vfe_ops.core_ops.get_irq_mask(vfe_dev,
-			&vfe_dev->error_info.overflow_recover_irq_mask0,
-			&vfe_dev->error_info.overflow_recover_irq_mask1);
-		}
-
-		atomic_cmpxchg(&vfe_dev->error_info.overflow_state,
-			NO_OVERFLOW, OVERFLOW_DETECTED);
-		pr_err("%s: VFE%d Bus overflow detected: start recovery!\n",
-			__func__, vfe_dev->pdev->id);
-	}
 
 	rc = vfe_dev->hw_info->vfe_ops.axi_ops.halt(vfe_dev,
 		halt_cmd->blocking_halt);
@@ -2322,7 +2312,10 @@ int msm_isp_axi_restart(struct vfe_device *vfe_dev,
 	struct msm_vfe_axi_stream *stream_info;
 	struct msm_vfe_axi_shared_data *axi_data = &vfe_dev->axi_data;
 	uint32_t wm_reload_mask = 0x0;
+	uint32_t irq_mask0, irq_mask1;
 	unsigned long flags;
+
+	pr_err("%s AXI restarting VFE%d\n", __func__,vfe_dev->pdev->id);
 
 	vfe_dev->buf_mgr->frameId_mismatch_recovery = 0;
 	for (i = 0, j = 0; j < axi_data->num_active_stream &&
@@ -2344,6 +2337,10 @@ int msm_isp_axi_restart(struct vfe_device *vfe_dev,
 		restart_cmd->enable_camif);
 	if (rc < 0)
 		pr_err("%s Error restarting HW\n", __func__);
+
+	vfe_dev->hw_info->vfe_ops.core_ops. 
+	get_irq_mask(vfe_dev, &irq_mask0, &irq_mask1); 
+	pr_err("%s AXI restarted VFE%d irq_mask0 %d irq_mask1 %d HW\n", __func__,vfe_dev->pdev->id,irq_mask0,irq_mask1); 
 
 	return rc;
 }
@@ -2527,7 +2524,8 @@ static int msm_isp_update_dual_HW_ms_info_at_stop(
 static int msm_isp_update_dual_HW_axi(struct vfe_device *vfe_dev,
 			struct msm_vfe_axi_stream *stream_info)
 {
-	int rc, vfe_id = 0;
+	int rc = 0;
+	int vfe_id;
 	uint32_t stream_idx = HANDLE_TO_IDX(stream_info->stream_handle);
 	struct dual_vfe_resource *dual_vfe_res = NULL;
 
@@ -2767,10 +2765,8 @@ static int msm_isp_stop_axi_stream(struct vfe_device *vfe_dev,
 			!vfe_dev->axi_data.src_info[intf].active) {
 			msm_isp_axi_stream_enable_cfg(vfe_dev, stream_info, 0);
 			stream_info->state = INACTIVE;
-		if (!vfe_dev->axi_data.src_info[intf].active) { 
 			vfe_dev->hw_info->vfe_ops.core_ops.reg_update(vfe_dev,
 				SRC_TO_INTF(stream_info->stream_src));
-		}
 
 			/*
 			 * Active bit is reset in disble_camif for PIX.
@@ -3011,6 +3007,7 @@ static int msm_isp_return_empty_buffer(struct vfe_device *vfe_dev,
 		return rc;
 	}
 
+	memset(&error_event, 0, sizeof(error_event));
 	error_event.frame_id = frame_id;
 	error_event.u.error_info.err_type = ISP_ERROR_RETURN_EMPTY_BUFFER;
 	error_event.u.error_info.session_id = stream_info->session_id;
@@ -3522,7 +3519,10 @@ void msm_isp_process_axi_irq_stream(struct vfe_device *vfe_dev,
 	stream_info->frame_id++;
 	if (done_buf)
 		buf_index = done_buf->buf_idx;
-
+	trace_printk("buf done for stream %p/%x vfe %d bufq %x buf_idx %x pp_bit %d\n",
+		stream_info, stream_info->stream_src, vfe_dev->pdev->id,
+		done_buf ? done_buf->bufq_handle : stream_info->bufq_handle[VFE_BUF_QUEUE_DEFAULT],
+		buf_index, pingpong_bit);
 	rc = vfe_dev->buf_mgr->ops->update_put_buf_cnt(vfe_dev->buf_mgr,
 		vfe_dev->pdev->id,
 		done_buf ? done_buf->bufq_handle :
@@ -3532,7 +3532,7 @@ void msm_isp_process_axi_irq_stream(struct vfe_device *vfe_dev,
 	if (rc < 0) {
 		spin_unlock_irqrestore(&stream_info->lock, flags);
 		/* this usually means a serious scheduling error */
-		msm_isp_halt_send_error(vfe_dev, ISP_EVENT_BUF_FATAL_ERROR);
+		msm_isp_halt_send_error(vfe_dev, ISP_EVENT_PING_PONG_MISMATCH);
 		return;
 	}
 	/*

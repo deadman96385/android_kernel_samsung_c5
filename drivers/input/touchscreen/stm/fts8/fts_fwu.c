@@ -378,6 +378,18 @@ void fts_execute_autotune(struct fts_ts_info *info)
 	fts_delay(300);
 	fts_fw_wait_for_event_D3(info, STATUS_EVENT_SELF_AUTOTUNE_DONE_D3, 0x00);
 
+	if (info->set_protection_disable) {
+		unsigned char regData[2];
+
+		input_err(true, info->dev, "%s: Disable Autotune Protection\n", __func__);
+
+		regData[0] = 0xC1;
+		regData[1] = 0x0E;
+		info->fts_write_reg(info, regData, 2);
+		fts_delay(20);
+		fts_fw_wait_for_event(info, STATUS_EVENT_PURE_AUTOTUNE_FLAG_WRITE_FINISH);
+	}
+
 	info->fts_command(info, FTS_CMD_SAVE_CX_TUNING);
 	fts_delay(230);
 	fts_fw_wait_for_event(info, STATUS_EVENT_FLASH_WRITE_CXTUNE_VALUE);
@@ -388,6 +400,30 @@ void fts_execute_autotune(struct fts_ts_info *info)
 
 	/* Reset FTS */
 	info->fts_systemreset(info, 30);
+}
+
+void fts_check_pure_autotune(struct fts_ts_info *info)
+{
+	int rc;
+	unsigned char regAdd[3];
+	unsigned char buf[5];
+
+	regAdd[0] = 0xD0;
+	regAdd[1] = 0x00;
+	regAdd[2] = 0x4E;
+
+	rc = info->fts_read_reg(info, regAdd, 3, buf, 4);
+	if (rc < 0)
+		return;
+
+	if ((buf[1] == 0xA5) && (buf[2] == 0x96))
+		input_info(true, info->dev,
+			"%s: enabled (Protection Disable) [%02X%02X]\n",
+			__func__, buf[1], buf[2]);
+	else
+		input_info(true, info->dev,
+			"%s: disabled (Protection Enable) [%02X%02X]\n",
+			__func__, buf[1], buf[2]);
 }
 
 void fts_fw_init(struct fts_ts_info *info, bool magic_cal)
@@ -426,6 +462,7 @@ void fts_fw_init(struct fts_ts_info *info, bool magic_cal)
 		input_err(true, info->dev, "%s: DO NOT CALIBRATION(0x%02X)\n", __func__, info->cal_count);
 	}
 #endif
+	fts_check_pure_autotune(info);
 
 	info->fts_command(info, SENSEON);
 #ifdef FTS_SUPPORT_PRESSURE_SENSOR
@@ -530,7 +567,7 @@ int fts_fw_update_on_probe(struct fts_ts_info *info)
 	}
 
 	snprintf(fw_path, FTS_MAX_FW_PATH, "%s", info->firmware_name);
-	input_info(true, info->dev, "%s: Load firmware : %s, TSP_ID : %d\n", __func__, fw_path, info->board->tsp_id);
+	input_info(true, info->dev, "%s: Load firmware : %s\n", __func__, fw_path);
 
 	retval = request_firmware(&fw_entry, fw_path, info->dev);
 	if (retval) {
@@ -569,7 +606,8 @@ int fts_fw_update_on_probe(struct fts_ts_info *info)
 #ifdef PAT_CONTROL
 	if ((info->fw_main_version_of_ic < info->fw_main_version_of_bin)
 		|| ((info->config_version_of_ic < info->config_version_of_bin))
-		|| ((info->fw_version_of_ic < info->fw_version_of_bin)))
+		|| ((info->fw_version_of_ic < info->fw_version_of_bin))
+		|| (info->boot_crc_check_fail == FTS_BOOT_CRC_FAIL))
 		retval = FTS_NEED_FW_UPDATE;
 	else
 		retval = FTS_NOT_ERROR;
@@ -623,7 +661,8 @@ int fts_fw_update_on_probe(struct fts_ts_info *info)
 #else
 	if ((info->fw_main_version_of_ic < info->fw_main_version_of_bin)
 		|| ((info->config_version_of_ic < info->config_version_of_bin))
-		|| ((info->fw_version_of_ic < info->fw_version_of_bin)))
+		|| ((info->fw_version_of_ic < info->fw_version_of_bin))
+		|| (info->boot_crc_check_fail == FTS_BOOT_CRC_FAIL))
 		retval = fts_fw_updater(info, fw_data, restore_cal);
 	else
 		retval = FTS_NOT_ERROR;

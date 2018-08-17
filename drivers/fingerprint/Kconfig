@@ -1,4 +1,4 @@
-#
+
 # Sensor  drivers configuration
 #
 menuconfig SENSORS_FINGERPRINT
@@ -27,18 +27,20 @@ config SENSORS_FPRINT_SECURE
 	help
 	  If you say yes here you get support for Validity's
 	  fingerprint sensor enable secure zone.
+config SENSORS_FINGERPRINT_32BITS_PLATFORM_ONLY
+	tristate "Fingerprint sensor supports only 32bits platform"
+	default n
+	help
+	  If you say yes here the non TZ device driver will only supports
+	  32bits platform.
+	  In case of Exynos7580, this feature should be enabled.
+	  And you should be use the compat_ioctl not the unlocked_ioctl.
 config SENSORS_ET320
 	tristate "ET320 fingerprint sensor supprot"
 	default n
 	help
 	  If you say yes here you get support for Egistec's
 	  fingerprint sensor ET320.
-config SENSORS_ET510
-	tristate "ET510 fingerprint sensor supprot"
-	default n
-	help
-	  If you say yes here you get support for Egistec's
-	  fingerprint sensor ET510.
 config SENSORS_ET5XX
 	tristate "ET5XX fingerprint sensor supprot"
 	default n
